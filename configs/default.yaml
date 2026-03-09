@@ -1,0 +1,32 @@
+paths:
+  slide_path: data/slides/MJUL22785295_001.mrxs
+  model_path: data/model_scripted.pt
+  output_dir: outputs/example_run
+
+model:
+  target_mpp: 0.88
+  patch_px: 512
+  stride_px: 384
+  halo_px: 64
+  batch_size: 8
+  threshold: 0.5
+  apply_sigmoid: true
+
+runtime:
+  device: cuda
+  use_amp: true
+  openslide_cache_bytes: 536870912
+  torch_num_threads: 1
+
+output:
+  write_tiff: true
+  bigtiff: true
+  compression: null
+  preview_max_size: 1536
+  keep_memmap: true
+
+# Reserved for the next optimization pass.
+future:
+  use_bounds: false
+  supertile_px: 4096
+  use_tissue_mask: false

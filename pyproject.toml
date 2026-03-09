@@ -1,0 +1,124 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wsi-seg"
+version = "0.1.0"
+description = "Whole-slide-image segmentation inference pipeline on OpenSlide"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [
+  {name = "Naveen Johnson"}
+]
+dependencies = [
+  "numpy>=1.26",
+  "Pillow>=10.0",
+  "PyYAML>=6.0",
+  "pydantic>=2.7",
+  "typer>=0.12",
+  "rich>=13.7",
+  "tifffile>=2025.1.10",
+  "openslide-python>=1.4.1",
+  "openslide-bin>=4.0",
+]
+
+# Choose exactly one GPU extra at sync time:
+#   uv sync --extra xpu   --group dev   # Intel Arc / Xe
+#   uv sync --extra cu128 --group dev   # NVIDIA CUDA 12.8
+#   uv sync --extra rocm  --group dev   # AMD ROCm 6.4
+#   uv sync --extra cpu   --group dev   # CPU only / CI
+[project.optional-dependencies]
+xpu   = ["torch>=2.2", "triton-xpu ; sys_platform == 'linux'"]
+cu128 = ["torch>=2.2"]
+rocm  = ["torch>=2.2", "pytorch-triton-rocm ; sys_platform == 'linux'"]
+cpu   = ["torch>=2.2"]
+
+[dependency-groups]
+dev = [
+  "pytest>=8.2",
+  "ruff>=0.6",
+  "mypy>=1.11",
+]
+
+[tool.uv]
+package = true
+# Extras are mutually exclusive — only one GPU backend at a time.
+conflicts = [
+  [
+    { extra = "xpu" },
+    { extra = "cu128" },
+    { extra = "rocm" },
+    { extra = "cpu" },
+  ],
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-xpu",  extra = "xpu" },
+  { index = "pytorch-cu128", extra = "cu128" },
+  { index = "pytorch-rocm", extra = "rocm" },
+  { index = "pytorch-cpu",  extra = "cpu" },
+]
+# triton-xpu wheel files live at the root /whl index.
+# The /xpu sub-index only has external absolute links to them,
+# which uv does not follow — so we point directly to the root.
+triton-xpu = [
+  { index = "pytorch-whl", extra = "xpu" },
+]
+pytorch-triton-rocm = [
+  { index = "pytorch-rocm", extra = "rocm" },
+]
+
+# Hosts torch+xpu simple-index pages (but not the triton-xpu wheel files).
+[[tool.uv.index]]
+name = "pytorch-xpu"
+url = "https://download.pytorch.org/whl/xpu"
+explicit = true
+
+# Root pytorch whl index — where triton-xpu wheel files actually live.
+[[tool.uv.index]]
+name = "pytorch-whl"
+url = "https://download.pytorch.org/whl"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-rocm"
+url = "https://download.pytorch.org/whl/rocm6.4"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[project.scripts]
+wsi-seg = "wsi_seg.cli:app"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = false
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_return_any = false
