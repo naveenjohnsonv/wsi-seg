@@ -54,3 +54,23 @@ model:
     assert cfg.paths.slide_path.is_absolute()
     assert cfg.paths.model_path.is_absolute()
     assert cfg.paths.output_dir.is_absolute()
+
+
+def test_from_yaml_upgrades_legacy_future_schedule(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "legacy.yaml"
+    cfg_path.write_text(
+        """
+paths:
+  slide_path: ./data/slide.mrxs
+  model_path: ./data/model.pt
+future:
+  use_bounds: false
+  use_tissue_mask: false
+  supertile_px: 8192
+""",
+        encoding="utf-8",
+    )
+    cfg = AppConfig.from_yaml(cfg_path)
+    assert cfg.schedule.use_bounds is False
+    assert cfg.schedule.use_tissue_mask is False
+    assert cfg.schedule.supertile_px == 8192

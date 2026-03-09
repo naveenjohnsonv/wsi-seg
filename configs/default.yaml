@@ -25,8 +25,11 @@ output:
   preview_max_size: 1536
   keep_memmap: true
 
-# Reserved for the next optimization pass.
-future:
-  use_bounds: false
+schedule:
+  use_bounds: true
+  use_tissue_mask: true
+  tissue_mask_max_size: 1536
+  tissue_mask_min_fraction: 0.03
+  tissue_mask_saturation_threshold: 18
+  tissue_mask_white_threshold: 235
   supertile_px: 4096
-  use_tissue_mask: false

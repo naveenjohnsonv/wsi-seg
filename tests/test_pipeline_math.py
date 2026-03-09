@@ -1,4 +1,4 @@
-from wsi_seg.pipeline import axis_positions, valid_crop_bounds
+from wsi_seg.geometry import axis_positions, valid_crop_bounds
 
 
 def test_axis_positions_covers_tail() -> None:

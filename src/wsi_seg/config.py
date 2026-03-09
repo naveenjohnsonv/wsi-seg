@@ -45,8 +45,8 @@ class ModelConfig(BaseModel):
             raise ValueError("model.patch_px must be greater than 2 * model.halo_px")
         if self.stride_px != valid_extent:
             raise ValueError(
-                "For the first implementation, stride_px must equal patch_px - 2 * halo_px "
-                "so center-crop stitching covers the output canvas without gaps."
+                "stride_px must equal patch_px - 2 * halo_px so "
+                "center-crop stitching covers the output canvas without gaps."
             )
         return self
 
@@ -70,6 +70,28 @@ class OutputConfig(BaseModel):
     keep_memmap: bool = True
 
 
+class ScheduleConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    use_bounds: bool = True
+    use_tissue_mask: bool = True
+    tissue_mask_max_size: int = 1536
+    tissue_mask_min_fraction: float = 0.03
+    tissue_mask_saturation_threshold: int = 18
+    tissue_mask_white_threshold: int = 235
+    supertile_px: int = 4096
+
+    @model_validator(mode="after")
+    def validate_schedule(self) -> ScheduleConfig:
+        if self.tissue_mask_max_size <= 0:
+            raise ValueError("schedule.tissue_mask_max_size must be > 0")
+        if not 0.0 <= self.tissue_mask_min_fraction <= 1.0:
+            raise ValueError("schedule.tissue_mask_min_fraction must be in [0, 1]")
+        if self.supertile_px <= 0:
+            raise ValueError("schedule.supertile_px must be > 0")
+        return self
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -77,6 +99,7 @@ class AppConfig(BaseModel):
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
+    schedule: ScheduleConfig = Field(default_factory=ScheduleConfig)
     future: dict[str, Any] = Field(default_factory=dict)
 
     @classmethod
@@ -84,8 +107,23 @@ class AppConfig(BaseModel):
         cfg_path = Path(path)
         with cfg_path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
+        raw = _upgrade_legacy_schedule(raw)
         config = cls.model_validate(raw)
         config.paths.slide_path = config.paths.slide_path.expanduser().resolve()
         config.paths.model_path = config.paths.model_path.expanduser().resolve()
         config.paths.output_dir = config.paths.output_dir.expanduser().resolve()
         return config
+
+
+def _upgrade_legacy_schedule(raw: dict[str, Any]) -> dict[str, Any]:
+    if "schedule" in raw or "future" not in raw:
+        return raw
+    future = raw.get("future") or {}
+    schedule = {
+        "use_bounds": future.get("use_bounds", True),
+        "use_tissue_mask": future.get("use_tissue_mask", True),
+        "supertile_px": future.get("supertile_px", 4096),
+    }
+    upgraded = dict(raw)
+    upgraded["schedule"] = schedule
+    return upgraded
