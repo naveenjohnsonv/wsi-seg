@@ -8,7 +8,11 @@ from PIL import Image
 from wsi_seg.slide import OpenSlideReader
 
 
-def _overlay_mask(base: Image.Image, mask_img: Image.Image, rgba: tuple[int, int, int, int]) -> Image.Image:
+def _overlay_mask(
+    base: Image.Image,
+    mask_img: Image.Image,
+    rgba: tuple[int, int, int, int],
+) -> Image.Image:
     overlay = base.convert("RGBA")
     layer = Image.new("RGBA", base.size, rgba[:3] + (0,))
     alpha = mask_img.point(lambda p: rgba[3] if p > 0 else 0).convert("L")

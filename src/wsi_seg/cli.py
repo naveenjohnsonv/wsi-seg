@@ -9,7 +9,7 @@ from rich.table import Table
 
 from wsi_seg.config import AppConfig
 from wsi_seg.model import probe_model
-from wsi_seg.pipeline import run_baseline
+from wsi_seg.pipeline import plan_run, run_baseline
 from wsi_seg.slide import OpenSlideReader
 from wsi_seg.utils import format_bytes, resolve_device
 
@@ -28,7 +28,7 @@ def inspect_slide(
     cfg = _load_config(config_path)
     with OpenSlideReader(cfg.paths.slide_path) as slide:
         selection = slide.choose_level(cfg.model.target_mpp)
-        out_w, out_h = slide.output_shape(cfg.model.target_mpp)
+        out_w, out_h, planning, _, coarse_mask = plan_run(cfg, slide)
         md = slide.metadata
 
         table = Table(title="Slide inspection")
@@ -45,6 +45,17 @@ def inspect_slide(
         table.add_row("Target MPP", f"{cfg.model.target_mpp:.6f}")
         table.add_row("Output mask size", f"{out_w} x {out_h}")
         table.add_row("Estimated mask bytes", format_bytes(out_w * out_h))
+        table.add_row(
+            "Schedule ROI",
+            f"x={planning.roi.x}, y={planning.roi.y}, "
+            f"w={planning.roi.width}, h={planning.roi.height}",
+        )
+        table.add_row("Grid patches", str(planning.total_grid_patches))
+        table.add_row("ROI patches", str(planning.roi_patches))
+        table.add_row("Candidate patches", str(planning.tissue_patches))
+        table.add_row("Supertiles", str(planning.supertiles))
+        if coarse_mask is not None:
+            table.add_row("Coarse tissue mask", f"{coarse_mask.shape[1]} x {coarse_mask.shape[0]}")
         if md.bounds is not None:
             table.add_row(
                 "Bounds",
@@ -86,25 +97,42 @@ def probe_model_cmd(
     console.print(table)
 
 
-@app.command("run")
-def run_cmd(config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")]) -> None:
-    cfg = _load_config(config_path)
-    summary = run_baseline(cfg)
-
+def _print_run_summary(summary) -> None:
     table = Table(title="Run summary")
     table.add_column("Field")
     table.add_column("Value")
     table.add_row("Slide", str(summary.slide_path))
     table.add_row("Device", summary.device)
     table.add_row("Output shape", f"{summary.output_shape[1]} x {summary.output_shape[0]}")
-    table.add_row("Patches processed", str(summary.num_patches))
+    table.add_row("Grid patches", str(summary.num_grid_patches))
+    table.add_row("ROI patches", str(summary.num_roi_patches))
+    table.add_row("Candidate patches", str(summary.num_candidate_patches))
+    table.add_row("Supertiles", str(summary.num_supertiles))
+    table.add_row("Candidate patches / sec", f"{summary.patches_per_second:.2f}")
     table.add_row("Total seconds", f"{summary.total_seconds:.2f}")
     table.add_row("Memmap", str(summary.artifacts.mask_memmap))
     table.add_row("Mask TIFF", str(summary.artifacts.mask_tiff))
     table.add_row("Preview mask", str(summary.artifacts.preview_mask))
     table.add_row("Preview overlay", str(summary.artifacts.preview_overlay))
+    table.add_row("Preview tissue", str(summary.artifacts.preview_tissue))
     table.add_row("Run manifest", str(summary.artifacts.run_json))
     console.print(table)
+
+
+@app.command("run")
+def run_cmd(config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")]) -> None:
+    cfg = _load_config(config_path)
+    summary = run_baseline(cfg)
+    _print_run_summary(summary)
+
+
+@app.command("benchmark")
+def benchmark_cmd(
+    config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")],
+) -> None:
+    cfg = _load_config(config_path)
+    summary = run_baseline(cfg)
+    _print_run_summary(summary)
 
 
 if __name__ == "__main__":  # pragma: no cover

@@ -16,7 +16,7 @@ class CoarseTissueMask:
     thumb_h: int
 
     @classmethod
-    def from_mask(cls, mask: np.ndarray) -> "CoarseTissueMask":
+    def from_mask(cls, mask: np.ndarray) -> CoarseTissueMask:
         mask_u8 = mask.astype(np.uint8)
         integral = np.pad(mask_u8.astype(np.int32).cumsum(axis=0).cumsum(axis=1), ((1, 0), (1, 0)))
         h, w = mask_u8.shape
@@ -96,13 +96,14 @@ def build_coarse_tissue_mask(
     white_threshold: int = 235,
 ) -> CoarseTissueMask:
     thumb = slide.thumbnail(max_size)
-    rgb = np.asarray(thumb, dtype=np.uint8)
     hsv = np.asarray(thumb.convert("HSV"), dtype=np.uint8)
     sat = hsv[..., 1]
     val = hsv[..., 2]
     gray = np.asarray(thumb.convert("L"), dtype=np.uint8)
 
     otsu = otsu_threshold(gray)
-    tissue = ((gray < otsu) | ((sat >= saturation_threshold) & (val < white_threshold))).astype(np.uint8)
+    tissue = ((gray < otsu) | ((sat >= saturation_threshold) & (val < white_threshold))).astype(
+        np.uint8
+    )
     tissue = _cleanup_mask(tissue)
     return CoarseTissueMask.from_mask(tissue)

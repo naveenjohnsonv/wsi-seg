@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
-
 
 from wsi_seg.geometry import PatchMeta, axis_positions, valid_crop_bounds
-
 from wsi_seg.slide import OpenSlideReader
 from wsi_seg.tissue import CoarseTissueMask
 
@@ -45,7 +43,9 @@ class PlanningSummary:
     supertiles: int
 
 
-def schedule_roi(slide: OpenSlideReader, target_mpp: float, use_bounds: bool) -> tuple[int, int, ScheduleROI]:
+def schedule_roi(
+    slide: OpenSlideReader, target_mpp: float, use_bounds: bool
+) -> tuple[int, int, ScheduleROI]:
     out_w, out_h = slide.output_shape(target_mpp)
     if not use_bounds or slide.metadata.bounds is None:
         return out_w, out_h, ScheduleROI(0, 0, out_w, out_h)
@@ -62,7 +62,9 @@ def schedule_roi(slide: OpenSlideReader, target_mpp: float, use_bounds: bool) ->
     return out_w, out_h, ScheduleROI(x1, y1, x2 - x1, y2 - y1)
 
 
-def _crop_intersects_roi(crop_x1: int, crop_y1: int, crop_x2: int, crop_y2: int, roi: ScheduleROI) -> bool:
+def _crop_intersects_roi(
+    crop_x1: int, crop_y1: int, crop_x2: int, crop_y2: int, roi: ScheduleROI
+) -> bool:
     return not (crop_x2 <= roi.x or crop_y2 <= roi.y or crop_x1 >= roi.x2 or crop_y1 >= roi.y2)
 
 
@@ -86,7 +88,9 @@ def plan_patch_grid(
 
     for out_y in ys:
         for out_x in xs:
-            left, top, right, bottom = valid_crop_bounds(out_x, out_y, patch_px, out_w, out_h, halo_px)
+            left, top, right, bottom = valid_crop_bounds(
+                out_x, out_y, patch_px, out_w, out_h, halo_px
+            )
             gx1 = out_x + left
             gy1 = out_y + top
             gx2 = min(out_x + right, out_w)

@@ -81,10 +81,13 @@ class _ThumbSlide:
 
 
 def test_otsu_threshold_returns_byte_threshold() -> None:
-    gray = np.concatenate([
-        np.zeros((16, 16), dtype=np.uint8) + 30,
-        np.zeros((16, 16), dtype=np.uint8) + 220,
-    ], axis=1)
+    gray = np.concatenate(
+        [
+            np.zeros((16, 16), dtype=np.uint8) + 30,
+            np.zeros((16, 16), dtype=np.uint8) + 220,
+        ],
+        axis=1,
+    )
     t = otsu_threshold(gray)
     assert 0 <= t <= 255
 
