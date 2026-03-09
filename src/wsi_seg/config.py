@@ -68,7 +68,7 @@ class OutputConfig(BaseModel):
     compression: str | None = None
     write_previews: bool = True
     preview_max_size: int = 1536
-    keep_memmap: bool = True
+    keep_memmap: bool = False
 
 
 class ScheduleConfig(BaseModel):

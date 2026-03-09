@@ -10,10 +10,10 @@ ENV UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy \
     UV_TORCH_BACKEND=auto
 
-COPY pyproject.toml uv.lock README.md /app/
+COPY pyproject.toml README.md /app/
 COPY configs /app/configs
 COPY src /app/src
 
-RUN uv sync --frozen --no-group dev
+RUN uv sync --no-group dev --extra cpu
 
 ENTRYPOINT ["uv", "run", "wsi-seg"]

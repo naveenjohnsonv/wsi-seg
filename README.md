@@ -44,7 +44,7 @@ It is designed around the constraints of digital pathology:
 - **single `run` command** replaces `run`, `run-many`, and `benchmark`
 - `--slide-path` accepts a file (single slide) or directory (batch); defaults to `data/slides`
 - `--no-exports` isolates core pipeline timing without TIFF/preview cost
-- `--discard-memmap` cleans up intermediate memmap after the run
+- **intermediate memmaps are discarded by default**; `--keep-memmap` preserves them for debugging
 - **no paths in `default.yaml`** — sensible defaults live in code
 
 ## Chosen architecture
@@ -104,6 +104,8 @@ uv sync --extra rocm  --group dev   # AMD ROCm 6.4
 uv sync --extra cpu   --group dev   # CPU only / CI
 ```
 
+Docker builds install the **CPU** extra by default so the image is reproducible without GPU-specific wheels.
+
 ## Data layout
 
 ```text
@@ -137,7 +139,13 @@ uv run wsi-seg run --slide-path data/slides
 Isolate core pipeline timing (skip TIFF and preview exports):
 
 ```bash
-uv run wsi-seg run --no-exports --discard-memmap
+uv run wsi-seg run --no-exports
+```
+
+Preserve the intermediate memmap for debugging:
+
+```bash
+uv run wsi-seg run --keep-memmap
 ```
 
 Override model or output directory:
@@ -169,7 +177,6 @@ Each run creates its own directory under `outputs/<slide_stem>/<run_id>/`:
 outputs/
 └── MJUL22785295_001/
     └── 20260308T131422Z_4c16605_cfg9a21f3/
-        ├── mask.tmp.npy          # intermediate memmap
         ├── mask.tif              # final binary mask
         ├── preview_mask.png
         ├── preview_overlay.png
@@ -178,6 +185,7 @@ outputs/
 ```
 
 The `run_id` is `<UTC timestamp>_<git-sha7>_<config-hash8>`, giving full traceability.
+By default the temporary memmap is removed after the run; use `--keep-memmap` when you want to inspect it.
 
 `run.json` includes:
 - `run_id`, `started_at_utc`, `finished_at_utc`

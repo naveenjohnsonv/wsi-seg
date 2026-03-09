@@ -19,7 +19,7 @@ output:
   compression: null
   write_previews: true
   preview_max_size: 1536
-  keep_memmap: true
+  keep_memmap: false
 
 schedule:
   use_bounds: true

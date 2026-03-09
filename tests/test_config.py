@@ -35,6 +35,7 @@ def test_paths_defaults_when_omitted() -> None:
     assert cfg.paths.slide_path is None
     assert cfg.paths.model_path == Path("data/model_scripted.pt")
     assert cfg.paths.output_dir == Path("outputs")
+    assert cfg.output.keep_memmap is False
 
 
 def test_paths_from_yaml_when_provided() -> None:
