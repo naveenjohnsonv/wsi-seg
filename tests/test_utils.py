@@ -1,6 +1,7 @@
 import re
+from pathlib import Path
 
-from wsi_seg.utils import config_hash, generate_run_id, git_info, utc_now_iso
+from wsi_seg.utils import config_hash, discover_slide_paths, generate_run_id, git_info, utc_now_iso
 
 
 def test_utc_now_iso_format() -> None:
@@ -56,3 +57,21 @@ def test_generate_run_id_format() -> None:
     assert len(parts) == 3, f"expected 3 parts: {rid}"
     assert re.match(r"^\d{8}T\d{6}Z$", parts[0])
     assert len(parts[2]) == 8
+
+
+def test_discover_slide_paths_from_file(tmp_path: Path) -> None:
+    slide = tmp_path / "a.mrxs"
+    slide.write_text("x", encoding="utf-8")
+    found = discover_slide_paths(slide)
+    assert found == [slide.resolve()]
+
+
+def test_discover_slide_paths_from_directory(tmp_path: Path) -> None:
+    slide_a = tmp_path / "a.mrxs"
+    slide_b = tmp_path / "b.mrxs"
+    other = tmp_path / "note.txt"
+    slide_a.write_text("x", encoding="utf-8")
+    slide_b.write_text("x", encoding="utf-8")
+    other.write_text("x", encoding="utf-8")
+    found = discover_slide_paths(tmp_path)
+    assert found == sorted([slide_a.resolve(), slide_b.resolve()])

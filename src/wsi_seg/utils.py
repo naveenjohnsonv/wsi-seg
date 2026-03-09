@@ -124,3 +124,16 @@ def generate_run_id(cfg_dict: dict[str, Any]) -> str:
     sha = gi.get("git_commit") or "nogit"
     chash = config_hash(cfg_dict)
     return f"{ts}_{sha}_{chash}"
+
+
+def discover_slide_paths(
+    path: str | Path,
+    *,
+    pattern: str = "*.mrxs",
+    recursive: bool = False,
+) -> list[Path]:
+    root = Path(path).expanduser().resolve()
+    if root.is_file():
+        return [root]
+    iterator = root.rglob(pattern) if recursive else root.glob(pattern)
+    return sorted(p.resolve() for p in iterator if p.is_file())

@@ -10,9 +10,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class PathsConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    slide_path: Path
-    model_path: Path
-    output_dir: Path = Path("outputs/run")
+    slide_path: Path | None = None
+    model_path: Path = Path("data/model_scripted.pt")
+    output_dir: Path = Path("outputs")
 
 
 class ModelConfig(BaseModel):
@@ -66,6 +66,7 @@ class OutputConfig(BaseModel):
     write_tiff: bool = True
     bigtiff: bool = True
     compression: str | None = None
+    write_previews: bool = True
     preview_max_size: int = 1536
     keep_memmap: bool = True
 
@@ -95,7 +96,7 @@ class ScheduleConfig(BaseModel):
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    paths: PathsConfig
+    paths: PathsConfig = Field(default_factory=PathsConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
@@ -109,7 +110,8 @@ class AppConfig(BaseModel):
             raw = yaml.safe_load(f) or {}
         raw = _upgrade_legacy_schedule(raw)
         config = cls.model_validate(raw)
-        config.paths.slide_path = config.paths.slide_path.expanduser().resolve()
+        if config.paths.slide_path is not None:
+            config.paths.slide_path = config.paths.slide_path.expanduser().resolve()
         config.paths.model_path = config.paths.model_path.expanduser().resolve()
         config.paths.output_dir = config.paths.output_dir.expanduser().resolve()
         return config

@@ -56,7 +56,7 @@ class BatchStats:
 @dataclass(slots=True)
 class RunArtifacts:
     run_dir: Path
-    mask_memmap: Path
+    mask_memmap: Path | None
     mask_tiff: Path | None
     preview_overlay: Path | None
     preview_mask: Path | None
@@ -244,13 +244,15 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
                 compression=cfg.output.compression,
             )
 
-        previews = save_previews(
-            slide,
-            mask,
-            run_dir,
-            max_size=cfg.output.preview_max_size,
-            tissue_mask=coarse_mask,
-        )
+        previews: dict[str, Path] = {}
+        if cfg.output.write_previews:
+            previews = save_previews(
+                slide,
+                mask,
+                run_dir,
+                max_size=cfg.output.preview_max_size,
+                tissue_mask=coarse_mask,
+            )
         timing.export_outputs = time.perf_counter() - t0
 
         timing.total = time.perf_counter() - wall_start
@@ -308,12 +310,14 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
     finally:
         slide.close()
 
+    mask_memmap_artifact: Path | None = mask_memmap_path
     if not cfg.output.keep_memmap and mask_memmap_path.exists():
         mask_memmap_path.unlink()
+        mask_memmap_artifact = None
 
     artifacts = RunArtifacts(
         run_dir=run_dir,
-        mask_memmap=mask_memmap_path,
+        mask_memmap=mask_memmap_artifact,
         mask_tiff=mask_tiff_path,
         preview_overlay=previews.get("preview_overlay"),
         preview_mask=previews.get("preview_mask"),

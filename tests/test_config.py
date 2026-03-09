@@ -5,11 +5,6 @@ import pytest
 from wsi_seg.config import AppConfig
 
 BASE = {
-    "paths": {
-        "slide_path": "data/slide.mrxs",
-        "model_path": "data/model.pt",
-        "output_dir": "outputs/run",
-    },
     "model": {
         "target_mpp": 0.88,
         "patch_px": 512,
@@ -35,6 +30,26 @@ def test_config_validation_rejects_bad_stride() -> None:
         AppConfig.model_validate(bad)
 
 
+def test_paths_defaults_when_omitted() -> None:
+    cfg = AppConfig.model_validate(BASE)
+    assert cfg.paths.slide_path is None
+    assert cfg.paths.model_path == Path("data/model_scripted.pt")
+    assert cfg.paths.output_dir == Path("outputs")
+
+
+def test_paths_from_yaml_when_provided() -> None:
+    with_paths = dict(BASE)
+    with_paths["paths"] = {
+        "slide_path": "data/slides/test.mrxs",
+        "model_path": "data/custom_model.pt",
+        "output_dir": "my_outputs",
+    }
+    cfg = AppConfig.model_validate(with_paths)
+    assert cfg.paths.slide_path == Path("data/slides/test.mrxs")
+    assert cfg.paths.model_path == Path("data/custom_model.pt")
+    assert cfg.paths.output_dir == Path("my_outputs")
+
+
 def test_from_yaml_resolves_paths(tmp_path: Path) -> None:
     cfg_path = tmp_path / "cfg.yaml"
     cfg_path.write_text(
@@ -56,13 +71,27 @@ model:
     assert cfg.paths.output_dir.is_absolute()
 
 
+def test_from_yaml_no_paths_section(tmp_path: Path) -> None:
+    cfg_path = tmp_path / "minimal.yaml"
+    cfg_path.write_text(
+        """
+model:
+  patch_px: 512
+  stride_px: 384
+  halo_px: 64
+""",
+        encoding="utf-8",
+    )
+    cfg = AppConfig.from_yaml(cfg_path)
+    assert cfg.paths.slide_path is None
+    assert cfg.paths.model_path.is_absolute()
+    assert cfg.paths.output_dir.is_absolute()
+
+
 def test_from_yaml_upgrades_legacy_future_schedule(tmp_path: Path) -> None:
     cfg_path = tmp_path / "legacy.yaml"
     cfg_path.write_text(
         """
-paths:
-  slide_path: ./data/slide.mrxs
-  model_path: ./data/model.pt
 future:
   use_bounds: false
   use_tissue_mask: false

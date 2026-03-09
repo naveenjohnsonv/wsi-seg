@@ -1,8 +1,3 @@
-paths:
-  slide_path: data/slides/MJUL22785295_001.mrxs
-  model_path: data/model_scripted.pt
-  output_dir: outputs
-
 model:
   target_mpp: 0.88
   patch_px: 512
@@ -22,6 +17,7 @@ output:
   write_tiff: true
   bigtiff: true
   compression: null
+  write_previews: true
   preview_max_size: 1536
   keep_memmap: true
 

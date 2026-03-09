@@ -12,7 +12,7 @@ It is designed around the constraints of digital pathology:
 ## Current implemented phases
 
 ### Phase 0 — project scaffold
-- CLI (`inspect`, `probe-model`, `run`, `benchmark`)
+- CLI (`inspect`, `probe-model`, `run`)
 - YAML config with validation
 - Docker / `uv` / CI / tests
 
@@ -39,6 +39,13 @@ It is designed around the constraints of digital pathology:
 - **planning fractions**: ROI area fraction, candidate fraction of ROI and grid
 - **batch stats**: number of batches, mean batch fill
 - **git traceability**: commit SHA, branch, dirty flag in `run.json`
+
+### Phase 4 — unified CLI
+- **single `run` command** replaces `run`, `run-many`, and `benchmark`
+- `--slide-path` accepts a file (single slide) or directory (batch); defaults to `data/slides`
+- `--no-exports` isolates core pipeline timing without TIFF/preview cost
+- `--discard-memmap` cleans up intermediate memmap after the run
+- **no paths in `default.yaml`** — sensible defaults live in code
 
 ## Chosen architecture
 
@@ -109,36 +116,50 @@ data/
 
 ## Commands
 
-### Inspect a slide and planned schedule
+Run all slides in `data/slides/` with defaults:
 
 ```bash
-uv run wsi-seg inspect configs/default.yaml
+uv run wsi-seg run
 ```
 
-Prints:
-- pyramid metadata
-- chosen inference level
-- output mask size
-- bounds-projected ROI
-- grid patch count / ROI patch count / candidate patch count / supertile count
-
-### Probe the TorchScript model
+Run a single slide:
 
 ```bash
-uv run wsi-seg probe-model configs/default.yaml
+uv run wsi-seg run --slide-path data/slides/MJUL22785295_001.mrxs
 ```
 
-### Run the pipeline
+Run all slides in a specific directory:
 
 ```bash
-uv run wsi-seg run configs/default.yaml
+uv run wsi-seg run --slide-path data/slides
 ```
 
-### Run with the same pipeline but print throughput-oriented stats
+Isolate core pipeline timing (skip TIFF and preview exports):
 
 ```bash
-uv run wsi-seg benchmark configs/default.yaml
+uv run wsi-seg run --no-exports --discard-memmap
 ```
+
+Override model or output directory:
+
+```bash
+uv run wsi-seg run --model-path data/other_model.pt --output-dir results
+```
+
+Inspect slide metadata and planning:
+
+```bash
+uv run wsi-seg inspect
+uv run wsi-seg inspect --slide-path data/slides/MJUL22785295_001.mrxs
+```
+
+Probe TorchScript model:
+
+```bash
+uv run wsi-seg probe-model
+```
+
+When multiple slides are processed, a batch summary CSV/JSON is written under `outputs/_batches/`.
 
 ## Outputs
 
@@ -168,18 +189,17 @@ The `run_id` is `<UTC timestamp>_<git-sha7>_<config-hash8>`, giving full traceab
 - config used for the run
 - coordinate mapping notes back to level-0 pixels
 
-## Current trade-offs
+Batch runs write their aggregate reports under `outputs/_batches/<batch_id>/`.
 
-This version intentionally prioritizes **clarity and correctness** over the last bit of performance.
+## Current limitations
 
-- It still writes a **full-size output mask** at the target MPP.
-- It uses a **simple thumbnail-based tissue mask**, not a learned foreground model.
-- It uses **synchronous supertile execution**; reader prefetch is a future improvement.
+- It uses a coarse, conservative tissue mask heuristic rather than a learned tissue segmenter.
+- It uses **synchronous supertile execution**; reader prefetch is still a future improvement.
 - It exports a simple TIFF mask, not yet a pyramidal OME-TIFF.
 
 ## Suggested next steps
 
-1. run all three slides and visually verify tissue masks across slides
+1. visually verify tissue masks across all three slides
 2. add buffered reader prefetch for supertiles
 3. add optional bounds-cropped intermediate/output mode
 4. add probability blending / gaussian weighting as an optional stitcher
