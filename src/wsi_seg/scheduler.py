@@ -41,6 +41,8 @@ class PlanningSummary:
     roi_patches: int
     tissue_patches: int
     supertiles: int
+    edge_patches: int = 0
+    padded_patches: int = 0
 
 
 def schedule_roi(
@@ -84,6 +86,8 @@ def plan_patch_grid(
     total_grid = len(xs) * len(ys)
     roi_patches = 0
     tissue_patches = 0
+    edge_patches = 0
+    padded_patches = 0
     metas: list[PatchMeta] = []
 
     for out_y in ys:
@@ -103,6 +107,17 @@ def plan_patch_grid(
                 if tissue_fraction < min_tissue_fraction:
                     continue
             tissue_patches += 1
+            is_edge = (
+                out_x == 0
+                or out_y == 0
+                or out_x + patch_px >= out_w
+                or out_y + patch_px >= out_h
+            )
+            is_padded = out_x + patch_px > out_w or out_y + patch_px > out_h
+            if is_edge:
+                edge_patches += 1
+            if is_padded:
+                padded_patches += 1
             metas.append(PatchMeta(out_x=out_x, out_y=out_y))
 
     summary = PlanningSummary(
@@ -111,6 +126,8 @@ def plan_patch_grid(
         roi_patches=roi_patches,
         tissue_patches=tissue_patches,
         supertiles=0,
+        edge_patches=edge_patches,
+        padded_patches=padded_patches,
     )
     return metas, summary
 

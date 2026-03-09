@@ -98,25 +98,53 @@ def probe_model_cmd(
 
 
 def _print_run_summary(summary) -> None:
+    from wsi_seg.pipeline import RunSummary
+
+    s: RunSummary = summary
+
     table = Table(title="Run summary")
     table.add_column("Field")
     table.add_column("Value")
-    table.add_row("Slide", str(summary.slide_path))
-    table.add_row("Device", summary.device)
-    table.add_row("Output shape", f"{summary.output_shape[1]} x {summary.output_shape[0]}")
-    table.add_row("Grid patches", str(summary.num_grid_patches))
-    table.add_row("ROI patches", str(summary.num_roi_patches))
-    table.add_row("Candidate patches", str(summary.num_candidate_patches))
-    table.add_row("Supertiles", str(summary.num_supertiles))
-    table.add_row("Candidate patches / sec", f"{summary.patches_per_second:.2f}")
-    table.add_row("Total seconds", f"{summary.total_seconds:.2f}")
-    table.add_row("Memmap", str(summary.artifacts.mask_memmap))
-    table.add_row("Mask TIFF", str(summary.artifacts.mask_tiff))
-    table.add_row("Preview mask", str(summary.artifacts.preview_mask))
-    table.add_row("Preview overlay", str(summary.artifacts.preview_overlay))
-    table.add_row("Preview tissue", str(summary.artifacts.preview_tissue))
-    table.add_row("Run manifest", str(summary.artifacts.run_json))
+    table.add_row("Run ID", s.run_id)
+    table.add_row("Run directory", str(s.artifacts.run_dir))
+    table.add_row("Slide", str(s.slide_path))
+    table.add_row("Device", s.device)
+    table.add_row("Output shape", f"{s.output_shape[1]} x {s.output_shape[0]}")
+    table.add_row("Grid patches", str(s.num_grid_patches))
+    table.add_row("ROI patches", str(s.num_roi_patches))
+    table.add_row("Candidate patches", str(s.num_candidate_patches))
+    table.add_row("Supertiles", str(s.num_supertiles))
+    table.add_row("Candidate patches / sec", f"{s.patches_per_second:.2f}")
     console.print(table)
+
+    t = s.stage_timing
+    timing_table = Table(title="Stage timing (seconds)")
+    timing_table.add_column("Stage")
+    timing_table.add_column("Seconds", justify="right")
+    timing_table.add_column("% of total", justify="right")
+    total = max(t.total, 1e-9)
+    for label, value in [
+        ("Open slide", t.open_slide),
+        ("Plan + tissue mask", t.plan_and_mask),
+        ("Read supertiles", t.read_supertiles),
+        ("Model inference", t.model_infer),
+        ("Writeback", t.writeback),
+        ("Export outputs", t.export_outputs),
+    ]:
+        timing_table.add_row(label, f"{value:.3f}", f"{100 * value / total:.1f}%")
+    timing_table.add_row("Total", f"{t.total:.3f}", "100.0%")
+    console.print(timing_table)
+
+    artifacts_table = Table(title="Artifacts")
+    artifacts_table.add_column("File")
+    artifacts_table.add_column("Path")
+    artifacts_table.add_row("Memmap", str(s.artifacts.mask_memmap))
+    artifacts_table.add_row("Mask TIFF", str(s.artifacts.mask_tiff))
+    artifacts_table.add_row("Preview mask", str(s.artifacts.preview_mask))
+    artifacts_table.add_row("Preview overlay", str(s.artifacts.preview_overlay))
+    artifacts_table.add_row("Preview tissue", str(s.artifacts.preview_tissue))
+    artifacts_table.add_row("Run manifest", str(s.artifacts.run_json))
+    console.print(artifacts_table)
 
 
 @app.command("run")

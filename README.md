@@ -31,6 +31,15 @@ It is designed around the constraints of digital pathology:
 - **supertile-based reading** instead of per-patch `read_region()`
 - richer planning and throughput stats in `inspect` and `run`
 
+### Phase 3 — run history and observability
+- **per-run output directories**: `outputs/<slide_stem>/<run_id>/`
+- **run ID** format: `<UTC timestamp>_<git-sha7>_<config-hash8>`
+- **stage-level timing**: open slide, plan+mask, read, infer, writeback, export
+- **three throughput tiers**: grid/ROI/candidate patches per second
+- **planning fractions**: ROI area fraction, candidate fraction of ROI and grid
+- **batch stats**: number of batches, mean batch fill
+- **git traceability**: commit SHA, branch, dirty flag in `run.json`
+
 ## Chosen architecture
 
 - backend: **OpenSlide**
@@ -69,7 +78,8 @@ It is designed around the constraints of digital pathology:
 ├── tests/
 │   ├── test_config.py
 │   ├── test_pipeline_math.py
-│   └── test_scheduler.py
+│   ├── test_scheduler.py
+│   └── test_utils.py
 ├── .gitignore
 ├── Dockerfile
 ├── pyproject.toml
@@ -132,21 +142,29 @@ uv run wsi-seg benchmark configs/default.yaml
 
 ## Outputs
 
+Each run creates its own directory under `outputs/<slide_stem>/<run_id>/`:
+
 ```text
-outputs/example_run/
-├── mask.tmp.npy          # intermediate memmap
-├── mask.tif              # final binary mask
-├── preview_mask.png
-├── preview_overlay.png
-├── preview_tissue.png    # coarse tissue mask used for scheduling
-└── run.json
+outputs/
+└── MJUL22785295_001/
+    └── 20260308T131422Z_4c16605_cfg9a21f3/
+        ├── mask.tmp.npy          # intermediate memmap
+        ├── mask.tif              # final binary mask
+        ├── preview_mask.png
+        ├── preview_overlay.png
+        ├── preview_tissue.png    # coarse tissue mask used for scheduling
+        └── run.json
 ```
 
+The `run_id` is `<UTC timestamp>_<git-sha7>_<config-hash8>`, giving full traceability.
+
 `run.json` includes:
-- slide metadata
-- chosen level and physical resolution
-- planning statistics
-- timing and throughput
+- `run_id`, `started_at_utc`, `finished_at_utc`
+- `git` block: commit SHA, branch, dirty flag
+- slide metadata and chosen level
+- planning statistics with area fractions and batch stats
+- stage-level timing breakdown
+- three throughput tiers: grid / ROI / candidate patches per second
 - config used for the run
 - coordinate mapping notes back to level-0 pixels
 
@@ -159,9 +177,9 @@ This version intentionally prioritizes **clarity and correctness** over the last
 - It uses **synchronous supertile execution**; reader prefetch is a future improvement.
 - It exports a simple TIFF mask, not yet a pyramidal OME-TIFF.
 
-## Suggested next commits after this version
+## Suggested next steps
 
-1. add buffered reader prefetch for supertiles
-2. add optional bounds-cropped intermediate/output mode
-3. add richer benchmark timing breakdowns per stage
+1. run all three slides and visually verify tissue masks across slides
+2. add buffered reader prefetch for supertiles
+3. add optional bounds-cropped intermediate/output mode
 4. add probability blending / gaussian weighting as an optional stitcher

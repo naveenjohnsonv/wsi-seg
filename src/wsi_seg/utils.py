@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import subprocess
 from dataclasses import asdict, is_dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -68,3 +71,56 @@ def format_bytes(n_bytes: int) -> str:
             return f"{value:.2f} {suffix}"
         value /= 1024.0
     return f"{value:.2f} TiB"
+
+
+def utc_now_iso() -> str:
+    return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+
+
+def git_info() -> dict[str, Any]:
+    info: dict[str, Any] = {"git_commit": None, "git_branch": None, "git_dirty": None}
+    try:
+        sha = subprocess.check_output(
+            ["git", "rev-parse", "--short=7", "HEAD"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        info["git_commit"] = sha
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    try:
+        branch = subprocess.check_output(
+            ["git", "branch", "--show-current"],
+            stderr=subprocess.DEVNULL,
+            text=True,
+        ).strip()
+        info["git_branch"] = branch or None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+    try:
+        rc = subprocess.call(
+            ["git", "diff", "--quiet", "HEAD"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        info["git_dirty"] = rc != 0
+    except FileNotFoundError:
+        pass
+    return info
+
+
+def config_hash(cfg_dict: dict[str, Any]) -> str:
+    relevant = {
+        "model": cfg_dict.get("model", {}),
+        "schedule": cfg_dict.get("schedule", {}),
+    }
+    blob = json.dumps(relevant, sort_keys=True, cls=JsonEncoder).encode()
+    return hashlib.sha256(blob).hexdigest()[:8]
+
+
+def generate_run_id(cfg_dict: dict[str, Any]) -> str:
+    ts = utc_now_iso()
+    gi = git_info()
+    sha = gi.get("git_commit") or "nogit"
+    chash = config_hash(cfg_dict)
+    return f"{ts}_{sha}_{chash}"
