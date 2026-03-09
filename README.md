@@ -1,44 +1,47 @@
 # WSI Segmentation Pipeline
 
-A production-style whole-slide image (WSI) segmentation pipeline built on **OpenSlide** and **PyTorch**.
+A production-style whole-slide image (WSI) lesion-segmentation inference pipeline built on **OpenSlide** and **PyTorch**.
 
-The pipeline performs lesion segmentation on MIRAX/MRXS slides at a target physical resolution (e.g. **0.88 µm/px**), using a TorchScript model and a memory-safe, patch-based inference loop. It is designed for clarity, reproducibility, and easy extension with more advanced I/O and scheduling strategies.
+It is designed around the constraints of digital pathology:
 
-This first implementation is intentionally a **working baseline**:
+- **massive** multi-resolution whole-slide images
+- model inputs defined in **physical resolution** (`target_mpp`), not just nominal magnification
+- **bounded memory** via disk-backed intermediate outputs
+- **I/O-aware scheduling** through bounds-aware planning, conservative coarse tissue masking, and supertile reads
 
-- inspect slide metadata and pyramid levels
-- probe the TorchScript segmentation model contract
-- run end-to-end inference on one slide at the target physical resolution
-- write a disk-backed binary mask
-- export a TIFF mask, a preview overlay, and a `run.json` manifest
+## Current implemented phases
 
-The next pass should add:
+### Phase 0 — project scaffold
+- CLI (`inspect`, `probe-model`, `run`, `benchmark`)
+- YAML config with validation
+- Docker / `uv` / CI / tests
 
-- conservative coarse tissue pruning
-- supertile-based reading
-- optional reader prefetch
-- richer benchmarking and tests
+### Phase 1 — correctness baseline
+- OpenSlide-based MIRAX/MRXS reader
+- robust metadata inspection
+- target-MPP-aware level selection
+- TorchScript model probing
+- overlap + center-crop stitching
+- memmap-backed mask writing
+- TIFF export + preview overlay + `run.json`
 
-## Why this baseline exists
+### Phase 2 — first performance pass
+- **bounds-aware scheduling** in output space
+- **coarse tissue mask** built from a thumbnail to skip obvious background
+- **supertile-based reading** instead of per-patch `read_region()`
+- richer planning and throughput stats in `inspect` and `run`
 
-The point of the first implementation is to lock down the hard correctness pieces first:
-
-- physical-scale logic (`target_mpp`)
-- level choice and resizing
-- TorchScript input/output assumptions
-- coordinate transforms between output mask pixels and level-0 pixels
-- bounded memory usage via memmap
-- reproducible outputs and logging
-
-## Chosen architecture for v0
+## Chosen architecture
 
 - backend: **OpenSlide**
 - scale policy: **target MPP is authoritative**
-- read-level policy: **nearest level by MPP error, then resize**
-- inference granularity: **patch-by-patch baseline**
+- read level: **nearest level by MPP error, then resize once**
+- schedule ROI: **slide bounds projected to output space**
+- pruning: **conservative coarse tissue mask**
+- read granularity: **supertile reads**
 - stitching: **overlap + center-crop writeback**
 - intermediate storage: **NumPy memmap**
-- final outputs: **TIFF + preview overlay + run manifest**
+- final outputs: **TIFF + previews + run manifest**
 
 ## Repo layout
 
@@ -54,48 +57,34 @@ The point of the first implementation is to lock down the hard correctness piece
 │       ├── __init__.py
 │       ├── cli.py
 │       ├── config.py
+│       ├── geometry.py
 │       ├── model.py
 │       ├── pipeline.py
 │       ├── preview.py
+│       ├── scheduler.py
 │       ├── slide.py
+│       ├── tissue.py
 │       ├── utils.py
 │       └── writer.py
 ├── tests/
 │   ├── test_config.py
-│   └── test_pipeline_math.py
+│   ├── test_pipeline_math.py
+│   └── test_scheduler.py
 ├── .gitignore
 ├── Dockerfile
 ├── pyproject.toml
 └── README.md
-└── uv.lock
 ```
 
 ## Install
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then sync with the extra that matches your GPU:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then sync with the extra that matches your device:
 
 ```bash
 uv sync --extra xpu   --group dev   # Intel Arc / Xe
 uv sync --extra cu128 --group dev   # NVIDIA CUDA 12.8
 uv sync --extra rocm  --group dev   # AMD ROCm 6.4
-uv sync --extra cpu   --group dev   # CPU only
-```
-
-### Verify GPU detection
-
-```bash
-# Intel Arc / Xe
-uv run python -c "import torch; print(torch.__version__, torch.xpu.is_available())"
-
-# NVIDIA
-uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available())"
-```
-
-### Docker
-
-```bash
-docker build -t wsi-seg .
-docker run --rm -it -v "$PWD":/app wsi-seg inspect configs/default.yaml
+uv sync --extra cpu   --group dev   # CPU only / CI
 ```
 
 ## Data layout
@@ -106,65 +95,73 @@ data/
 └── slides/
     ├── MJUL22785295_001.mrxs
     └── MJUL22785295_001/
-    └── ...
 ```
 
 ## Commands
 
-### Inspect a slide
+### Inspect a slide and planned schedule
 
 ```bash
-wsi-seg inspect configs/default.yaml
+uv run wsi-seg inspect configs/default.yaml
 ```
 
-Prints slide metadata, pyramid levels, chosen level, and estimated output size.
+Prints:
+- pyramid metadata
+- chosen inference level
+- output mask size
+- bounds-projected ROI
+- grid patch count / ROI patch count / candidate patch count / supertile count
 
-### Probe the model
+### Probe the TorchScript model
 
 ```bash
-wsi-seg probe-model configs/default.yaml
+uv run wsi-seg probe-model configs/default.yaml
 ```
-
-Loads the TorchScript model and prints input/output shapes and output kind.
 
 ### Run the pipeline
 
 ```bash
-wsi-seg run configs/default.yaml
+uv run wsi-seg run configs/default.yaml
 ```
 
-Runs end-to-end inference and writes outputs to `paths.output_dir`:
+### Run with the same pipeline but print throughput-oriented stats
+
+```bash
+uv run wsi-seg benchmark configs/default.yaml
+```
+
+## Outputs
 
 ```text
 outputs/example_run/
-├── mask.tmp.npy       # intermediate memmap
-├── mask.tif           # final binary mask
+├── mask.tmp.npy          # intermediate memmap
+├── mask.tif              # final binary mask
 ├── preview_mask.png
 ├── preview_overlay.png
-└── run.json           # run manifest with metadata, timings, config
+├── preview_tissue.png    # coarse tissue mask used for scheduling
+└── run.json
 ```
 
 `run.json` includes:
-
 - slide metadata
-- chosen level and level MPP
-- output mask shape
+- chosen level and physical resolution
+- planning statistics
+- timing and throughput
 - config used for the run
-- timing summary
-- coordinate mapping notes
+- coordinate mapping notes back to level-0 pixels
 
-## Current limitations
+## Current trade-offs
 
-- no tissue masking yet
-- no supertiles yet
-- no reader prefetch yet
-- default TIFF export is simple, not pyramidal
-- assumes binary segmentation output
+This version intentionally prioritizes **clarity and correctness** over the last bit of performance.
 
-## Suggested next commits
+- It still writes a **full-size output mask** at the target MPP.
+- It uses a **simple thumbnail-based tissue mask**, not a learned foreground model.
+- It uses **synchronous supertile execution**; reader prefetch is a future improvement.
+- It exports a simple TIFF mask, not yet a pyramidal OME-TIFF.
 
-1. add coarse tissue/background mask
-2. switch patch reads to supertile reads
-3. add optional OpenSlide cache configuration
-4. add benchmark command and richer timings
-5. add manual GitHub Actions smoke test for a real slide
+## Suggested next commits after this version
+
+1. add buffered reader prefetch for supertiles
+2. add optional bounds-cropped intermediate/output mode
+3. add richer benchmark timing breakdowns per stage
+4. add probability blending / gaussian weighting as an optional stitcher
