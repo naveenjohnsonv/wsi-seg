@@ -75,3 +75,17 @@ def test_discover_slide_paths_from_directory(tmp_path: Path) -> None:
     other.write_text("x", encoding="utf-8")
     found = discover_slide_paths(tmp_path)
     assert found == sorted([slide_a.resolve(), slide_b.resolve()])
+
+
+def test_discover_slide_paths_rejects_wrong_extension(tmp_path: Path) -> None:
+    wrong = tmp_path / "slide.svs"
+    wrong.write_text("x", encoding="utf-8")
+    found = discover_slide_paths(wrong, pattern="*.mrxs")
+    assert found == []
+
+
+def test_discover_slide_paths_accepts_matching_extension(tmp_path: Path) -> None:
+    slide = tmp_path / "slide.mrxs"
+    slide.write_text("x", encoding="utf-8")
+    found = discover_slide_paths(slide, pattern="*.mrxs")
+    assert found == [slide.resolve()]

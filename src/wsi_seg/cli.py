@@ -36,15 +36,17 @@ def _cfg_with_slide(cfg: AppConfig, slide_path: Path) -> AppConfig:
     return out
 
 
-def _resolve_slides(cfg: AppConfig, slide_path_override: Path | None) -> list[Path]:
+def _resolve_slides(
+    cfg: AppConfig, slide_path_override: Path | None
+) -> tuple[Path, list[Path]]:
     if slide_path_override is not None:
         target = slide_path_override.expanduser().resolve()
     elif cfg.paths.slide_path is not None:
         target = cfg.paths.slide_path
     else:
-        target = _DEFAULT_SLIDES_DIR.expanduser().resolve()
+        target = _DEFAULT_SLIDES_DIR.resolve()
 
-    return discover_slide_paths(target, pattern="*.mrxs")
+    return target, discover_slide_paths(target, pattern="*.mrxs")
 
 
 @app.command("inspect")
@@ -57,9 +59,9 @@ def inspect_slide(
     ] = None,
 ) -> None:
     cfg = _load_config(config_path)
-    slides = _resolve_slides(cfg, slide_path)
+    target, slides = _resolve_slides(cfg, slide_path)
     if not slides:
-        raise typer.BadParameter("No .mrxs slides found.")
+        raise typer.BadParameter(f"No .mrxs slides found in {target}")
 
     for sp in slides:
         slide_cfg = _cfg_with_slide(cfg, sp)
@@ -172,6 +174,7 @@ def _print_run_summary(summary: RunSummary) -> None:
     for label, value in [
         ("Open slide", t.open_slide),
         ("Plan + tissue mask", t.plan_and_mask),
+        ("Load model", t.load_model),
         ("Read supertiles", t.read_supertiles),
         ("Model inference", t.model_infer),
         ("Writeback", t.writeback),
@@ -184,12 +187,16 @@ def _print_run_summary(summary: RunSummary) -> None:
     artifacts_table = Table(title="Artifacts")
     artifacts_table.add_column("File")
     artifacts_table.add_column("Path")
-    artifacts_table.add_row("Memmap", str(s.artifacts.mask_memmap))
-    artifacts_table.add_row("Mask TIFF", str(s.artifacts.mask_tiff))
-    artifacts_table.add_row("Preview mask", str(s.artifacts.preview_mask))
-    artifacts_table.add_row("Preview overlay", str(s.artifacts.preview_overlay))
-    artifacts_table.add_row("Preview tissue", str(s.artifacts.preview_tissue))
-    artifacts_table.add_row("Run manifest", str(s.artifacts.run_json))
+    for label, path in [
+        ("Memmap", s.artifacts.mask_memmap),
+        ("Mask TIFF", s.artifacts.mask_tiff),
+        ("Preview mask", s.artifacts.preview_mask),
+        ("Preview overlay", s.artifacts.preview_overlay),
+        ("Preview tissue", s.artifacts.preview_tissue),
+        ("Run manifest", s.artifacts.run_json),
+    ]:
+        if path is not None:
+            artifacts_table.add_row(label, str(path))
     console.print(artifacts_table)
 
 
@@ -269,12 +276,12 @@ def run_cmd(
         ),
     ] = False,
     keep_memmap: Annotated[
-        bool,
+        bool | None,
         typer.Option(
             "--keep-memmap/--discard-memmap",
             help="Keep or discard the intermediate memmap after the run.",
         ),
-    ] = True,
+    ] = None,
 ) -> None:
     cfg = _load_config(config_path)
     if model_path is not None:
@@ -287,12 +294,13 @@ def run_cmd(
         cfg = cfg.model_copy(deep=True)
         cfg.output.write_tiff = False
         cfg.output.write_previews = False
-    cfg = cfg.model_copy(deep=True)
-    cfg.output.keep_memmap = keep_memmap
+    if keep_memmap is not None:
+        cfg = cfg.model_copy(deep=True)
+        cfg.output.keep_memmap = keep_memmap
 
-    slides = _resolve_slides(cfg, slide_path)
+    target, slides = _resolve_slides(cfg, slide_path)
     if not slides:
-        raise typer.BadParameter("No .mrxs slides found.")
+        raise typer.BadParameter(f"No .mrxs slides found in {target}")
 
     summaries: list[RunSummary] = []
     for sp in slides:

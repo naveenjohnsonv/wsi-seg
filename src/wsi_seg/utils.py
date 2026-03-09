@@ -134,6 +134,8 @@ def discover_slide_paths(
 ) -> list[Path]:
     root = Path(path).expanduser().resolve()
     if root.is_file():
+        if not root.match(pattern):
+            return []
         return [root]
     iterator = root.rglob(pattern) if recursive else root.glob(pattern)
     return sorted(p.resolve() for p in iterator if p.is_file())

@@ -105,16 +105,30 @@ class AppConfig(BaseModel):
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> AppConfig:
-        cfg_path = Path(path)
+        cfg_path = Path(path).resolve()
+        cfg_dir = cfg_path.parent
         with cfg_path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         raw = _upgrade_legacy_schedule(raw)
+        raw_paths = raw.get("paths") or {}
         config = cls.model_validate(raw)
         if config.paths.slide_path is not None:
-            config.paths.slide_path = config.paths.slide_path.expanduser().resolve()
-        config.paths.model_path = config.paths.model_path.expanduser().resolve()
-        config.paths.output_dir = config.paths.output_dir.expanduser().resolve()
+            base = cfg_dir if "slide_path" in raw_paths else Path.cwd()
+            config.paths.slide_path = _resolve_relative(
+                config.paths.slide_path, base
+            )
+        base = cfg_dir if "model_path" in raw_paths else Path.cwd()
+        config.paths.model_path = _resolve_relative(config.paths.model_path, base)
+        base = cfg_dir if "output_dir" in raw_paths else Path.cwd()
+        config.paths.output_dir = _resolve_relative(config.paths.output_dir, base)
         return config
+
+
+def _resolve_relative(p: Path, base: Path) -> Path:
+    p = p.expanduser()
+    if p.is_absolute():
+        return p.resolve()
+    return (base / p).resolve()
 
 
 def _upgrade_legacy_schedule(raw: dict[str, Any]) -> dict[str, Any]:

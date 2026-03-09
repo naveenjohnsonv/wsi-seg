@@ -36,6 +36,7 @@ from wsi_seg.writer import create_mask_memmap, export_mask_tiff
 class StageTiming:
     open_slide: float = 0.0
     plan_and_mask: float = 0.0
+    load_model: float = 0.0
     read_supertiles: float = 0.0
     model_infer: float = 0.0
     writeback: float = 0.0
@@ -209,9 +210,12 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
         out_w, out_h, planning, supertiles, coarse_mask = plan_run(cfg, slide)
         timing.plan_and_mask = time.perf_counter() - t0
 
+        # --- stage: load model + allocate memmap ---
+        t0 = time.perf_counter()
         mask_memmap_path = run_dir / "mask.tmp.npy"
         mask = create_mask_memmap(mask_memmap_path, shape=(out_h, out_w))
         model = load_torchscript_model(cfg.paths.model_path, device)
+        timing.load_model = time.perf_counter() - t0
 
         # --- stages: read / infer / writeback (accumulated) ---
         for plan in supertiles:
