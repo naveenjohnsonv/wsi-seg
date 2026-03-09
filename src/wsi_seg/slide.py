@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 from PIL import Image
 
 
@@ -33,6 +35,7 @@ class SlideMetadata:
     height: int
     mpp_x: float
     mpp_y: float
+    mpp_source: str
     objective_power: float | None
     levels: list[SlideLevel]
     bounds: SlideBounds | None
@@ -50,6 +53,13 @@ class LevelSelection:
 
 
 class OpenSlideReader:
+    _TEXT_MPP_PATTERNS = (
+        r"\bmpp(?:[_\s-]*x)?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
+        r"\bmicrons?\s+per\s+pixel\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)",
+        r"\bmicrometers?\s+per\s+pixel\s*[:=]?\s*([0-9]+(?:\.[0-9]+)?)",
+        r"\b(?:pixel\s+size|pixelsize)\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:um|µm)",
+    )
+
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
         self._openslide = self._import_openslide()
@@ -62,7 +72,7 @@ class OpenSlideReader:
             import openslide  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "OpenSlide is not available. Install openslide-python and the native OpenSlide runtime."  # noqa: E501
+                "OpenSlide is not available. Install openslide-python and the native OpenSlide runtime."
             ) from exc
         return openslide
 
@@ -70,25 +80,120 @@ class OpenSlideReader:
     def _float_or_none(value: Any) -> float | None:
         if value is None:
             return None
-        try:
+        if isinstance(value, (int, float)):
             return float(value)
-        except (TypeError, ValueError):
+        text = str(value).strip()
+        if not text:
             return None
+        try:
+            return float(text)
+        except ValueError:
+            pass
+        frac = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*([0-9]+(?:\.[0-9]+)?)\s*$", text)
+        if frac:
+            num = float(frac.group(1))
+            den = float(frac.group(2))
+            if den != 0:
+                return num / den
+        return None
+
+    @classmethod
+    def _parse_mpp_from_text(cls, value: Any) -> float | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        for pattern in cls._TEXT_MPP_PATTERNS:
+            match = re.search(pattern, text, flags=re.IGNORECASE)
+            if match:
+                return cls._float_or_none(match.group(1))
+        return None
+
+    @classmethod
+    def _extract_mpp_from_properties(
+        cls,
+        props: dict[str, Any],
+        *,
+        property_name_mpp_x: str = "openslide.mpp-x",
+        property_name_mpp_y: str = "openslide.mpp-y",
+        property_name_objective_power: str = "openslide.objective-power",
+    ) -> tuple[float, float, str]:
+        normalized = {str(k).lower(): v for k, v in props.items()}
+
+        def first_float(keys: tuple[str, ...]) -> float | None:
+            for key in keys:
+                val = normalized.get(key.lower())
+                parsed = cls._float_or_none(val)
+                if parsed is not None and parsed > 0:
+                    return parsed
+            return None
+
+        mpp_x = first_float((property_name_mpp_x, "openslide.mpp-x", "mpp_x", "mppx"))
+        mpp_y = first_float((property_name_mpp_y, "openslide.mpp-y", "mpp_y", "mppy"))
+        if mpp_x is not None or mpp_y is not None:
+            if mpp_x is None:
+                mpp_x = mpp_y
+            if mpp_y is None:
+                mpp_y = mpp_x
+            assert mpp_x is not None and mpp_y is not None
+            return float(mpp_x), float(mpp_y), "openslide.mpp-x/y"
+
+        aperio_mpp = first_float(("aperio.mpp",))
+        if aperio_mpp is not None:
+            return float(aperio_mpp), float(aperio_mpp), "aperio.MPP"
+
+        for text_key in ("openslide.comment", "tiff.imagedescription", "image_description"):
+            parsed = cls._parse_mpp_from_text(normalized.get(text_key))
+            if parsed is not None and parsed > 0:
+                return float(parsed), float(parsed), f"text:{text_key}"
+
+        x_res = cls._float_or_none(normalized.get("tiff.xresolution"))
+        y_res = cls._float_or_none(normalized.get("tiff.yresolution"))
+        unit = str(normalized.get("tiff.resolutionunit", "")).strip().lower()
+        um_per_unit = None
+        if unit in {"inch", "inches", "2"}:
+            um_per_unit = 25400.0
+        elif unit in {"centimeter", "centimetre", "cm", "3"}:
+            um_per_unit = 10000.0
+        if um_per_unit is not None and (x_res or y_res):
+            if x_res is None:
+                x_res = y_res
+            if y_res is None:
+                y_res = x_res
+            assert x_res is not None and y_res is not None
+            if x_res > 0 and y_res > 0:
+                return (
+                    float(um_per_unit / x_res),
+                    float(um_per_unit / y_res),
+                    "tiff.resolution",
+                )
+
+        objective_power = first_float(
+            (
+                property_name_objective_power,
+                "aperio.appmag",
+                "hamamatsu.sourcelens",
+                "objective_power",
+            )
+        )
+        if objective_power is not None and objective_power > 0:
+            approx = 10.0 / float(objective_power)
+            return approx, approx, "objective-power-estimate"
+
+        raise ValueError("Could not determine level-0 MPP from slide metadata.")
 
     def _read_metadata(self) -> SlideMetadata:
         osr = self._slide
         osl = self._openslide
         props = dict(osr.properties)
 
-        mpp_x = self._float_or_none(props.get(osl.PROPERTY_NAME_MPP_X))
-        mpp_y = self._float_or_none(props.get(osl.PROPERTY_NAME_MPP_Y))
-        if mpp_x is None or mpp_y is None:
-            aperio_mpp = self._float_or_none(props.get("aperio.MPP"))
-            if aperio_mpp is not None:
-                mpp_x = mpp_x or aperio_mpp
-                mpp_y = mpp_y or aperio_mpp
-        if mpp_x is None or mpp_y is None:
-            raise ValueError("Could not determine level-0 MPP from slide metadata.")
+        mpp_x, mpp_y, mpp_source = self._extract_mpp_from_properties(
+            props,
+            property_name_mpp_x=osl.PROPERTY_NAME_MPP_X,
+            property_name_mpp_y=osl.PROPERTY_NAME_MPP_Y,
+            property_name_objective_power=osl.PROPERTY_NAME_OBJECTIVE_POWER,
+        )
 
         objective_power = self._float_or_none(props.get(osl.PROPERTY_NAME_OBJECTIVE_POWER))
         background_hex = props.get(osl.PROPERTY_NAME_BACKGROUND_COLOR)
@@ -124,6 +229,7 @@ class OpenSlideReader:
             height=int(h0),
             mpp_x=float(mpp_x),
             mpp_y=float(mpp_y),
+            mpp_source=mpp_source,
             objective_power=objective_power,
             levels=levels,
             bounds=bounds,
@@ -175,7 +281,7 @@ class OpenSlideReader:
         except ValueError:
             return (255, 255, 255, 255)
 
-    def read_region_rgb(self, location0: tuple[int, int], level: int, size: tuple[int, int]):
+    def read_region_rgb(self, location0: tuple[int, int], level: int, size: tuple[int, int]) -> Image.Image:
         rgba = self._slide.read_region(location0, level, size)
         bg = Image.new("RGBA", rgba.size, self._background_rgba())
         rgb = Image.alpha_composite(bg, rgba).convert("RGB")
@@ -193,3 +299,29 @@ class OpenSlideReader:
     def __exit__(self, exc_type, exc, tb) -> bool:
         self.close()
         return False
+
+
+def read_output_region(
+    slide: OpenSlideReader,
+    selection: LevelSelection,
+    *,
+    out_x: int,
+    out_y: int,
+    out_w: int,
+    out_h: int,
+    target_mpp: float,
+) -> np.ndarray:
+    mpp_x = slide.metadata.mpp_x
+    mpp_y = slide.metadata.mpp_y
+    level_mpp_x = selection.level_mpp_x
+    level_mpp_y = selection.level_mpp_y
+
+    read_x = int(round(out_x * target_mpp / mpp_x))
+    read_y = int(round(out_y * target_mpp / mpp_y))
+    read_w = max(1, int(round(out_w * target_mpp / level_mpp_x)))
+    read_h = max(1, int(round(out_h * target_mpp / level_mpp_y)))
+
+    pil_img = slide.read_region_rgb((read_x, read_y), selection.level, (read_w, read_h))
+    if pil_img.size != (out_w, out_h):
+        pil_img = pil_img.resize((out_w, out_h), resample=Image.Resampling.BILINEAR)
+    return np.asarray(pil_img, dtype=np.uint8)

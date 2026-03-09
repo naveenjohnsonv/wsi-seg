@@ -38,6 +38,12 @@ def test_paths_defaults_when_omitted() -> None:
     assert cfg.output.keep_memmap is False
 
 
+def test_runtime_prefetch_defaults_present() -> None:
+    cfg = AppConfig.model_validate(BASE)
+    assert cfg.runtime.prefetch_supertiles is True
+    assert cfg.runtime.prefetch_queue_size == 2
+
+
 def test_paths_from_yaml_when_provided() -> None:
     with_paths = dict(BASE)
     with_paths["paths"] = {

@@ -6,9 +6,22 @@ import subprocess
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 import torch
+
+
+SUPPORTED_SLIDE_SUFFIXES = (
+    ".mrxs",
+    ".svs",
+    ".tif",
+    ".tiff",
+    ".ndpi",
+    ".vms",
+    ".vmu",
+    ".scn",
+    ".bif",
+)
 
 
 class JsonEncoder(json.JSONEncoder):
@@ -24,6 +37,7 @@ class JsonEncoder(json.JSONEncoder):
 
 def dump_json(data: dict[str, Any], path: str | Path) -> None:
     out = Path(path)
+    out.parent.mkdir(parents=True, exist_ok=True)
     with out.open("w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, cls=JsonEncoder)
 
@@ -112,7 +126,14 @@ def git_info() -> dict[str, Any]:
 def config_hash(cfg_dict: dict[str, Any]) -> str:
     relevant = {
         "model": cfg_dict.get("model", {}),
+        "runtime": {
+            "prefetch_supertiles": cfg_dict.get("runtime", {}).get("prefetch_supertiles", True),
+            "prefetch_queue_size": cfg_dict.get("runtime", {}).get("prefetch_queue_size", 2),
+        },
         "schedule": cfg_dict.get("schedule", {}),
+        "output": {
+            "write_ome_tiff": cfg_dict.get("output", {}).get("write_ome_tiff", False),
+        },
     }
     blob = json.dumps(relevant, sort_keys=True, cls=JsonEncoder).encode()
     return hashlib.sha256(blob).hexdigest()[:8]
@@ -126,16 +147,33 @@ def generate_run_id(cfg_dict: dict[str, Any]) -> str:
     return f"{ts}_{sha}_{chash}"
 
 
+def _matches_suffix(path: Path, suffixes: Iterable[str]) -> bool:
+    lowered = path.name.lower()
+    return any(lowered.endswith(sfx.lower()) for sfx in suffixes)
+
+
 def discover_slide_paths(
     path: str | Path,
     *,
-    pattern: str = "*.mrxs",
+    suffixes: tuple[str, ...] | None = None,
+    pattern: str | None = None,
     recursive: bool = False,
 ) -> list[Path]:
     root = Path(path).expanduser().resolve()
+    if pattern is not None:
+        if root.is_file():
+            if not root.match(pattern):
+                return []
+            return [root]
+        iterator = root.rglob(pattern) if recursive else root.glob(pattern)
+        return sorted(p.resolve() for p in iterator if p.is_file())
+
+    wanted = suffixes or SUPPORTED_SLIDE_SUFFIXES
     if root.is_file():
-        if not root.match(pattern):
-            return []
-        return [root]
-    iterator = root.rglob(pattern) if recursive else root.glob(pattern)
-    return sorted(p.resolve() for p in iterator if p.is_file())
+        return [root] if _matches_suffix(root, wanted) else []
+
+    if recursive:
+        iterator = (p for p in root.rglob("*") if p.is_file())
+    else:
+        iterator = (p for p in root.iterdir() if p.is_file())
+    return sorted(p.resolve() for p in iterator if _matches_suffix(p, wanted))

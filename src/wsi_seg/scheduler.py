@@ -65,7 +65,11 @@ def schedule_roi(
 
 
 def _crop_intersects_roi(
-    crop_x1: int, crop_y1: int, crop_x2: int, crop_y2: int, roi: ScheduleROI
+    crop_x1: int,
+    crop_y1: int,
+    crop_x2: int,
+    crop_y2: int,
+    roi: ScheduleROI,
 ) -> bool:
     return not (crop_x2 <= roi.x or crop_y2 <= roi.y or crop_x1 >= roi.x2 or crop_y1 >= roi.y2)
 
@@ -108,10 +112,7 @@ def plan_patch_grid(
                     continue
             tissue_patches += 1
             is_edge = (
-                out_x == 0
-                or out_y == 0
-                or out_x + patch_px >= out_w
-                or out_y + patch_px >= out_h
+                out_x == 0 or out_y == 0 or out_x + patch_px >= out_w or out_y + patch_px >= out_h
             )
             is_padded = out_x + patch_px > out_w or out_y + patch_px > out_h
             if is_edge:

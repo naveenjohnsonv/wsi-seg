@@ -9,10 +9,12 @@ from rich.console import Console
 from rich.table import Table
 
 from wsi_seg.config import AppConfig
+from wsi_seg.logging_utils import configure_logging
 from wsi_seg.model import probe_model
 from wsi_seg.pipeline import RunSummary, plan_run, run_baseline
 from wsi_seg.slide import OpenSlideReader
 from wsi_seg.utils import (
+    SUPPORTED_SLIDE_SUFFIXES,
     discover_slide_paths,
     dump_json,
     format_bytes,
@@ -22,12 +24,13 @@ from wsi_seg.utils import (
 
 app = typer.Typer(add_completion=False, no_args_is_help=True)
 console = Console()
-
 _DEFAULT_SLIDES_DIR = Path("data/slides")
+
 
 
 def _load_config(config_path: Path) -> AppConfig:
     return AppConfig.from_yaml(config_path)
+
 
 
 def _cfg_with_slide(cfg: AppConfig, slide_path: Path) -> AppConfig:
@@ -36,8 +39,12 @@ def _cfg_with_slide(cfg: AppConfig, slide_path: Path) -> AppConfig:
     return out
 
 
+
 def _resolve_slides(
-    cfg: AppConfig, slide_path_override: Path | None
+    cfg: AppConfig,
+    slide_path_override: Path | None,
+    *,
+    recursive: bool,
 ) -> tuple[Path, list[Path]]:
     if slide_path_override is not None:
         target = slide_path_override.expanduser().resolve()
@@ -45,23 +52,29 @@ def _resolve_slides(
         target = cfg.paths.slide_path
     else:
         target = _DEFAULT_SLIDES_DIR.resolve()
+    return target, discover_slide_paths(target, recursive=recursive)
 
-    return target, discover_slide_paths(target, pattern="*.mrxs")
+
+
+def _supported_suffixes_text() -> str:
+    return ", ".join(SUPPORTED_SLIDE_SUFFIXES)
 
 
 @app.command("inspect")
 def inspect_slide(
-    config_path: Annotated[
-        Path, typer.Argument(help="Path to YAML config.")
-    ] = Path("configs/default.yaml"),
+    config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")] = Path("configs/default.yaml"),
     slide_path: Annotated[
-        Path | None, typer.Option("--slide-path", help="Slide file or directory to inspect.")
+        Path | None,
+        typer.Option("--slide-path", help="Slide file or directory to inspect."),
     ] = None,
+    recursive: Annotated[bool, typer.Option("--recursive", help="Recurse into directories.")] = False,
 ) -> None:
     cfg = _load_config(config_path)
-    target, slides = _resolve_slides(cfg, slide_path)
+    target, slides = _resolve_slides(cfg, slide_path, recursive=recursive)
     if not slides:
-        raise typer.BadParameter(f"No .mrxs slides found in {target}")
+        raise typer.BadParameter(
+            f"No supported slide files found in {target}. Supported suffixes: {_supported_suffixes_text()}"
+        )
 
     for sp in slides:
         slide_cfg = _cfg_with_slide(cfg, sp)
@@ -77,31 +90,30 @@ def inspect_slide(
             table.add_row("Vendor", str(md.vendor))
             table.add_row("Level-0 size", f"{md.width} x {md.height}")
             table.add_row("MPP x / y", f"{md.mpp_x:.6f} / {md.mpp_y:.6f}")
+            table.add_row("MPP source", md.mpp_source)
             table.add_row("Objective power", str(md.objective_power))
             table.add_row("Chosen level", str(selection.level))
-            mpp = f"{selection.level_mpp_x:.6f} / {selection.level_mpp_y:.6f}"
-            table.add_row("Chosen level MPP x / y", mpp)
+            table.add_row(
+                "Chosen level MPP x / y",
+                f"{selection.level_mpp_x:.6f} / {selection.level_mpp_y:.6f}",
+            )
             table.add_row("Target MPP", f"{slide_cfg.model.target_mpp:.6f}")
             table.add_row("Output mask size", f"{out_w} x {out_h}")
             table.add_row("Estimated mask bytes", format_bytes(out_w * out_h))
             table.add_row(
                 "Schedule ROI",
-                f"x={planning.roi.x}, y={planning.roi.y}, "
-                f"w={planning.roi.width}, h={planning.roi.height}",
+                f"x={planning.roi.x}, y={planning.roi.y}, w={planning.roi.width}, h={planning.roi.height}",
             )
             table.add_row("Grid patches", str(planning.total_grid_patches))
             table.add_row("ROI patches", str(planning.roi_patches))
             table.add_row("Candidate patches", str(planning.tissue_patches))
             table.add_row("Supertiles", str(planning.supertiles))
             if coarse_mask is not None:
-                table.add_row(
-                    "Coarse tissue mask", f"{coarse_mask.shape[1]} x {coarse_mask.shape[0]}"
-                )
+                table.add_row("Coarse tissue mask", f"{coarse_mask.shape[1]} x {coarse_mask.shape[0]}")
             if md.bounds is not None:
                 table.add_row(
                     "Bounds",
-                    f"x={md.bounds.x}, y={md.bounds.y}, "
-                    f"w={md.bounds.width}, h={md.bounds.height}",
+                    f"x={md.bounds.x}, y={md.bounds.y}, w={md.bounds.width}, h={md.bounds.height}",
                 )
             console.print(table)
 
@@ -122,11 +134,10 @@ def inspect_slide(
 
 @app.command("probe-model")
 def probe_model_cmd(
-    config_path: Annotated[
-        Path, typer.Argument(help="Path to YAML config.")
-    ] = Path("configs/default.yaml"),
+    config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")] = Path("configs/default.yaml"),
     model_path: Annotated[
-        Path | None, typer.Option("--model-path", help="Override model path from config.")
+        Path | None,
+        typer.Option("--model-path", help="Override model path from config."),
     ] = None,
 ) -> None:
     cfg = _load_config(config_path)
@@ -147,9 +158,9 @@ def probe_model_cmd(
     console.print(table)
 
 
+
 def _print_run_summary(summary: RunSummary) -> None:
     s = summary
-
     table = Table(title="Run summary")
     table.add_column("Field")
     table.add_column("Value")
@@ -165,24 +176,32 @@ def _print_run_summary(summary: RunSummary) -> None:
     table.add_row("Candidate patches / sec", f"{s.patches_per_second:.2f}")
     console.print(table)
 
-    t = s.stage_timing
-    timing_table = Table(title="Stage timing (seconds)")
-    timing_table.add_column("Stage")
-    timing_table.add_column("Seconds", justify="right")
-    timing_table.add_column("% of total", justify="right")
-    total = max(t.total, 1e-9)
+    wall = s.wall_timing
+    wall_table = Table(title="Wall timing (seconds)")
+    wall_table.add_column("Bucket")
+    wall_table.add_column("Seconds", justify="right")
+    wall_table.add_column("% of total", justify="right")
+    total = max(wall.total, 1e-9)
     for label, value in [
-        ("Open slide", t.open_slide),
-        ("Plan + tissue mask", t.plan_and_mask),
-        ("Load model", t.load_model),
-        ("Read supertiles", t.read_supertiles),
-        ("Model inference", t.model_infer),
-        ("Writeback", t.writeback),
-        ("Export outputs", t.export_outputs),
+        ("Open slide", wall.open_slide),
+        ("Plan + tissue mask", wall.plan_and_mask),
+        ("Load model", wall.load_model),
+        ("Processing loop", wall.processing_loop),
+        ("Export outputs", wall.export_outputs),
     ]:
-        timing_table.add_row(label, f"{value:.3f}", f"{100 * value / total:.1f}%")
-    timing_table.add_row("Total", f"{t.total:.3f}", "100.0%")
-    console.print(timing_table)
+        wall_table.add_row(label, f"{value:.3f}", f"{100 * value / total:.1f}%")
+    wall_table.add_row("Total", f"{wall.total:.3f}", "100.0%")
+    console.print(wall_table)
+
+    comp = s.component_timing
+    comp_table = Table(title="Component timing (clean overlap semantics)")
+    comp_table.add_column("Metric")
+    comp_table.add_column("Seconds", justify="right")
+    comp_table.add_row("Reader active", f"{comp.reader_active:.3f}")
+    comp_table.add_row("Reader wait", f"{comp.reader_wait:.3f}")
+    comp_table.add_row("Model infer active", f"{comp.model_infer:.3f}")
+    comp_table.add_row("Writeback active", f"{comp.writeback:.3f}")
+    console.print(comp_table)
 
     artifacts_table = Table(title="Artifacts")
     artifacts_table.add_column("File")
@@ -190,14 +209,17 @@ def _print_run_summary(summary: RunSummary) -> None:
     for label, path in [
         ("Memmap", s.artifacts.mask_memmap),
         ("Mask TIFF", s.artifacts.mask_tiff),
+        ("Mask OME-TIFF", s.artifacts.mask_ome_tiff),
         ("Preview mask", s.artifacts.preview_mask),
         ("Preview overlay", s.artifacts.preview_overlay),
         ("Preview tissue", s.artifacts.preview_tissue),
+        ("Events JSONL", s.artifacts.events_jsonl),
         ("Run manifest", s.artifacts.run_json),
     ]:
         if path is not None:
             artifacts_table.add_row(label, str(path))
     console.print(artifacts_table)
+
 
 
 def _print_batch_summary(summaries: list[RunSummary], cfg: AppConfig) -> None:
@@ -210,17 +232,13 @@ def _print_batch_summary(summaries: list[RunSummary], cfg: AppConfig) -> None:
             "roi_patches": s.num_roi_patches,
             "candidate_patches": s.num_candidate_patches,
             "supertiles": s.num_supertiles,
-            "seconds": round(s.stage_timing.total, 6),
-            "grid_patches_per_second": round(
-                s.num_grid_patches / max(s.stage_timing.total, 1e-9), 6
-            ),
+            "seconds": round(s.wall_timing.total, 6),
             "candidate_patches_per_second": round(s.patches_per_second, 6),
             "run_dir": str(s.artifacts.run_dir),
             "run_json": str(s.artifacts.run_json),
         }
         for s in summaries
     ]
-
     batch_id = f"batch_{generate_run_id(cfg.model_dump())}"
     batch_dir = cfg.paths.output_dir / "_batches" / batch_id
     batch_dir.mkdir(parents=True, exist_ok=True)
@@ -230,10 +248,7 @@ def _print_batch_summary(summaries: list[RunSummary], cfg: AppConfig) -> None:
         writer = csv.DictWriter(f, fieldnames=list(batch_rows[0].keys()))
         writer.writeheader()
         writer.writerows(batch_rows)
-    dump_json(
-        {"batch_id": batch_id, "num_slides": len(batch_rows), "slides": batch_rows},
-        json_path,
-    )
+    dump_json({"batch_id": batch_id, "num_slides": len(batch_rows), "slides": batch_rows}, json_path)
 
     table = Table(title="Batch run summary")
     table.add_column("Slide")
@@ -255,18 +270,18 @@ def _print_batch_summary(summaries: list[RunSummary], cfg: AppConfig) -> None:
 
 @app.command("run")
 def run_cmd(
-    config_path: Annotated[
-        Path, typer.Argument(help="Path to YAML config.")
-    ] = Path("configs/default.yaml"),
+    config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")] = Path("configs/default.yaml"),
     slide_path: Annotated[
         Path | None,
         typer.Option("--slide-path", help="Slide file or directory. Default: data/slides."),
     ] = None,
     model_path: Annotated[
-        Path | None, typer.Option("--model-path", help="Override model path from config.")
+        Path | None,
+        typer.Option("--model-path", help="Override model path from config."),
     ] = None,
     output_dir: Annotated[
-        Path | None, typer.Option("--output-dir", help="Override output root from config.")
+        Path | None,
+        typer.Option("--output-dir", help="Override output root from config."),
     ] = None,
     no_exports: Annotated[
         bool,
@@ -282,7 +297,10 @@ def run_cmd(
             help="Keep or discard the intermediate memmap after the run.",
         ),
     ] = None,
+    recursive: Annotated[bool, typer.Option("--recursive", help="Recurse into directories.")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", help="Enable richer logging.")] = False,
 ) -> None:
+    configure_logging(verbose=verbose)
     cfg = _load_config(config_path)
     if model_path is not None:
         cfg = cfg.model_copy(deep=True)
@@ -293,19 +311,22 @@ def run_cmd(
     if no_exports:
         cfg = cfg.model_copy(deep=True)
         cfg.output.write_tiff = False
+        cfg.output.write_ome_tiff = False
         cfg.output.write_previews = False
     if keep_memmap is not None:
         cfg = cfg.model_copy(deep=True)
         cfg.output.keep_memmap = keep_memmap
 
-    target, slides = _resolve_slides(cfg, slide_path)
+    target, slides = _resolve_slides(cfg, slide_path, recursive=recursive)
     if not slides:
-        raise typer.BadParameter(f"No .mrxs slides found in {target}")
+        raise typer.BadParameter(
+            f"No supported slide files found in {target}. Supported suffixes: {_supported_suffixes_text()}"
+        )
 
     summaries: list[RunSummary] = []
     for sp in slides:
         slide_cfg = _cfg_with_slide(cfg, sp)
-        summary = run_baseline(slide_cfg)
+        summary = run_baseline(slide_cfg, verbose=verbose)
         summaries.append(summary)
         _print_run_summary(summary)
 

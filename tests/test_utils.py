@@ -1,7 +1,14 @@
 import re
 from pathlib import Path
 
-from wsi_seg.utils import config_hash, discover_slide_paths, generate_run_id, git_info, utc_now_iso
+from wsi_seg.utils import (
+    SUPPORTED_SLIDE_SUFFIXES,
+    config_hash,
+    discover_slide_paths,
+    generate_run_id,
+    git_info,
+    utc_now_iso,
+)
 
 
 def test_utc_now_iso_format() -> None:
@@ -78,14 +85,18 @@ def test_discover_slide_paths_from_directory(tmp_path: Path) -> None:
 
 
 def test_discover_slide_paths_rejects_wrong_extension(tmp_path: Path) -> None:
-    wrong = tmp_path / "slide.svs"
+    wrong = tmp_path / "slide.txt"
     wrong.write_text("x", encoding="utf-8")
-    found = discover_slide_paths(wrong, pattern="*.mrxs")
+    found = discover_slide_paths(wrong)
     assert found == []
 
 
-def test_discover_slide_paths_accepts_matching_extension(tmp_path: Path) -> None:
-    slide = tmp_path / "slide.mrxs"
-    slide.write_text("x", encoding="utf-8")
-    found = discover_slide_paths(slide, pattern="*.mrxs")
-    assert found == [slide.resolve()]
+def test_discover_slide_paths_accepts_supported_suffixes(tmp_path: Path) -> None:
+    found_expected = []
+    for suffix in (".mrxs", ".svs", ".tif", ".tiff"):
+        slide = tmp_path / f"slide{suffix}"
+        slide.write_text("x", encoding="utf-8")
+        found_expected.append(slide.resolve())
+    found = discover_slide_paths(tmp_path)
+    assert found == sorted(found_expected)
+    assert ".svs" in SUPPORTED_SLIDE_SUFFIXES

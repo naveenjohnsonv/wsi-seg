@@ -58,6 +58,21 @@ class RuntimeConfig(BaseModel):
     use_amp: bool = True
     openslide_cache_bytes: int = 512 * 1024 * 1024
     torch_num_threads: int = 1
+    prefetch_supertiles: bool = True
+    prefetch_queue_size: int = 2
+    log_every_supertiles: int = 8
+
+    @model_validator(mode="after")
+    def validate_runtime(self) -> RuntimeConfig:
+        if self.openslide_cache_bytes < 0:
+            raise ValueError("runtime.openslide_cache_bytes must be >= 0")
+        if self.torch_num_threads < 0:
+            raise ValueError("runtime.torch_num_threads must be >= 0")
+        if self.prefetch_queue_size <= 0:
+            raise ValueError("runtime.prefetch_queue_size must be > 0")
+        if self.log_every_supertiles <= 0:
+            raise ValueError("runtime.log_every_supertiles must be > 0")
+        return self
 
 
 class OutputConfig(BaseModel):
@@ -65,10 +80,26 @@ class OutputConfig(BaseModel):
 
     write_tiff: bool = True
     bigtiff: bool = True
-    compression: str | None = None
+    compression: str | None = "zlib"
+    tiff_tile_size: int = 512
+    write_ome_tiff: bool = False
+    ome_tile_size: int = 512
+    ome_pyramid_min_size: int = 512
     write_previews: bool = True
     preview_max_size: int = 1536
     keep_memmap: bool = False
+
+    @model_validator(mode="after")
+    def validate_output(self) -> OutputConfig:
+        if self.preview_max_size <= 0:
+            raise ValueError("output.preview_max_size must be > 0")
+        if self.tiff_tile_size <= 0:
+            raise ValueError("output.tiff_tile_size must be > 0")
+        if self.ome_tile_size <= 0:
+            raise ValueError("output.ome_tile_size must be > 0")
+        if self.ome_pyramid_min_size <= 0:
+            raise ValueError("output.ome_pyramid_min_size must be > 0")
+        return self
 
 
 class ScheduleConfig(BaseModel):

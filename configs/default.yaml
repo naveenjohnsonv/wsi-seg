@@ -12,11 +12,18 @@ runtime:
   use_amp: true
   openslide_cache_bytes: 536870912
   torch_num_threads: 1
+  prefetch_supertiles: true
+  prefetch_queue_size: 2
+  log_every_supertiles: 8
 
 output:
   write_tiff: true
   bigtiff: true
-  compression: null
+  compression: zlib
+  tiff_tile_size: 512
+  write_ome_tiff: false
+  ome_tile_size: 512
+  ome_pyramid_min_size: 512
   write_previews: true
   preview_max_size: 1536
   keep_memmap: false

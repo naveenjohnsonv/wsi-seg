@@ -10,7 +10,9 @@ from PIL import Image
 
 from wsi_seg.config import AppConfig
 from wsi_seg.geometry import PatchMeta, valid_crop_bounds
+from wsi_seg.logging_utils import StructuredRunLogger
 from wsi_seg.model import batch_to_tensor, load_torchscript_model, output_to_probs
+from wsi_seg.prefetch import ReaderMetrics, SuperTilePrefetcher
 from wsi_seg.preview import save_previews
 from wsi_seg.scheduler import (
     PlanningSummary,
@@ -19,7 +21,7 @@ from wsi_seg.scheduler import (
     plan_patch_grid,
     schedule_roi,
 )
-from wsi_seg.slide import LevelSelection, OpenSlideReader
+from wsi_seg.slide import LevelSelection, OpenSlideReader, read_output_region
 from wsi_seg.tissue import build_coarse_tissue_mask
 from wsi_seg.utils import (
     dump_json,
@@ -27,21 +29,27 @@ from wsi_seg.utils import (
     git_info,
     resolve_device,
     supports_amp,
-    utc_now_iso,
+    utc_now_iso
 )
-from wsi_seg.writer import create_mask_memmap, export_mask_tiff
+from wsi_seg.writer import create_mask_memmap, export_mask_ome_tiff, export_mask_tiff
 
 
 @dataclass(slots=True)
-class StageTiming:
+class WallTiming:
     open_slide: float = 0.0
     plan_and_mask: float = 0.0
     load_model: float = 0.0
-    read_supertiles: float = 0.0
-    model_infer: float = 0.0
-    writeback: float = 0.0
+    processing_loop: float = 0.0
     export_outputs: float = 0.0
     total: float = 0.0
+
+
+@dataclass(slots=True)
+class ComponentTiming:
+    reader_active: float = 0.0
+    reader_wait: float = 0.0
+    model_infer: float = 0.0
+    writeback: float = 0.0
 
 
 @dataclass(slots=True)
@@ -59,9 +67,11 @@ class RunArtifacts:
     run_dir: Path
     mask_memmap: Path | None
     mask_tiff: Path | None
+    mask_ome_tiff: Path | None
     preview_overlay: Path | None
     preview_mask: Path | None
     preview_tissue: Path | None
+    events_jsonl: Path
     run_json: Path
 
 
@@ -71,7 +81,8 @@ class RunSummary:
     slide_path: Path
     output_shape: tuple[int, int]
     device: str
-    stage_timing: StageTiming
+    wall_timing: WallTiming
+    component_timing: ComponentTiming
     num_grid_patches: int
     num_roi_patches: int
     num_candidate_patches: int
@@ -83,32 +94,6 @@ class RunSummary:
 def _resize_patch(pil_img: Image.Image, patch_px: int) -> np.ndarray:
     if pil_img.size != (patch_px, patch_px):
         pil_img = pil_img.resize((patch_px, patch_px), resample=Image.Resampling.BILINEAR)
-    return np.asarray(pil_img, dtype=np.uint8)
-
-
-def _read_output_region(
-    slide: OpenSlideReader,
-    selection: LevelSelection,
-    *,
-    out_x: int,
-    out_y: int,
-    out_w: int,
-    out_h: int,
-    target_mpp: float,
-) -> np.ndarray:
-    mpp_x = slide.metadata.mpp_x
-    mpp_y = slide.metadata.mpp_y
-    level_mpp_x = selection.level_mpp_x
-    level_mpp_y = selection.level_mpp_y
-
-    read_x = int(round(out_x * target_mpp / mpp_x))
-    read_y = int(round(out_y * target_mpp / mpp_y))
-    read_w = max(1, int(round(out_w * target_mpp / level_mpp_x)))
-    read_h = max(1, int(round(out_h * target_mpp / level_mpp_y)))
-
-    pil_img = slide.read_region_rgb((read_x, read_y), selection.level, (read_w, read_h))
-    if pil_img.size != (out_w, out_h):
-        pil_img = pil_img.resize((out_w, out_h), resample=Image.Resampling.BILINEAR)
     return np.asarray(pil_img, dtype=np.uint8)
 
 
@@ -135,10 +120,8 @@ def _write_patch(
     gy1 = meta.out_y + top
     gx2 = min(meta.out_x + right, out_w)
     gy2 = min(meta.out_y + bottom, out_h)
-
     if gx2 <= gx1 or gy2 <= gy1:
         return
-
     crop = probs[top : top + (gy2 - gy1), left : left + (gx2 - gx1)]
     binary = (crop >= threshold).astype(np.uint8)
     mask[gy1:gy2, gx1:gx2] = binary
@@ -186,69 +169,156 @@ def _resolve_run_dir(cfg: AppConfig) -> tuple[str, Path]:
     return run_id, run_dir
 
 
-def run_baseline(cfg: AppConfig) -> RunSummary:
+
+def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
     run_id, run_dir = _resolve_run_dir(cfg)
+    run_logger = StructuredRunLogger(run_dir, verbose=verbose)
     started_at = utc_now_iso()
     device = resolve_device(cfg.runtime.device)
     if cfg.runtime.torch_num_threads > 0:
         torch.set_num_threads(cfg.runtime.torch_num_threads)
 
-    timing = StageTiming()
+    wall = WallTiming()
+    components = ComponentTiming()
     batch_stats = BatchStats()
     wall_start = time.perf_counter()
 
-    # --- stage: open slide ---
     t0 = time.perf_counter()
     slide = OpenSlideReader(cfg.paths.slide_path)
     cache_enabled = slide.set_cache(cfg.runtime.openslide_cache_bytes)
     selection = slide.choose_level(cfg.model.target_mpp)
-    timing.open_slide = time.perf_counter() - t0
+    wall.open_slide = time.perf_counter() - t0
+    run_logger.event(
+        "slide_opened",
+        slide_path=cfg.paths.slide_path,
+        vendor=slide.metadata.vendor,
+        cache_enabled=cache_enabled,
+        mpp_source=slide.metadata.mpp_source,
+        chosen_level=selection.level,
+        chosen_level_mpp_x=selection.level_mpp_x,
+        chosen_level_mpp_y=selection.level_mpp_y,
+    )
+
+    mask_tiff_path: Path | None = None
+    mask_ome_tiff_path: Path | None = None
+    previews: dict[str, Path] = {}
+    mask_memmap_path = run_dir / "mask.tmp.npy"
+    run_json_path = run_dir / "run.json"
 
     try:
-        # --- stage: plan and mask ---
         t0 = time.perf_counter()
         out_w, out_h, planning, supertiles, coarse_mask = plan_run(cfg, slide)
-        timing.plan_and_mask = time.perf_counter() - t0
+        wall.plan_and_mask = time.perf_counter() - t0
+        run_logger.event(
+            "planning_complete",
+            output_width=out_w,
+            output_height=out_h,
+            roi=planning.roi,
+            total_grid_patches=planning.total_grid_patches,
+            roi_patches=planning.roi_patches,
+            candidate_patches=planning.tissue_patches,
+            supertiles=planning.supertiles,
+        )
 
-        # --- stage: load model + allocate memmap ---
         t0 = time.perf_counter()
-        mask_memmap_path = run_dir / "mask.tmp.npy"
         mask = create_mask_memmap(mask_memmap_path, shape=(out_h, out_w))
         model = load_torchscript_model(cfg.paths.model_path, device)
-        timing.load_model = time.perf_counter() - t0
+        wall.load_model = time.perf_counter() - t0
+        run_logger.event(
+            "model_loaded",
+            model_path=cfg.paths.model_path,
+            device=str(device),
+            batch_size=cfg.model.batch_size,
+            use_amp=cfg.runtime.use_amp,
+        )
 
-        # --- stages: read / infer / writeback (accumulated) ---
-        for plan in supertiles:
-            t0 = time.perf_counter()
-            super_arr = _read_output_region(
+        loop_t0 = time.perf_counter()
+        use_prefetch = cfg.runtime.prefetch_supertiles and len(supertiles) > 1
+        run_logger.event(
+            "processing_started",
+            prefetch_enabled=use_prefetch,
+            prefetch_queue_size=cfg.runtime.prefetch_queue_size,
+            total_supertiles=len(supertiles),
+        )
+        if use_prefetch:
+            with SuperTilePrefetcher(
+                slide_path=cfg.paths.slide_path,
+                selection=selection,
+                target_mpp=cfg.model.target_mpp,
+                plans=supertiles,
+                openslide_cache_bytes=cfg.runtime.openslide_cache_bytes,
+                queue_size=cfg.runtime.prefetch_queue_size,
+            ) as prefetcher:
+                _process_prefetched_supertiles(
+                    mask,
+                    model,
+                    prefetcher,
+                    cfg,
+                    device,
+                    out_w,
+                    out_h,
+                    planning.supertiles,
+                    components,
+                    batch_stats,
+                    run_logger,
+                )
+                components.reader_active = prefetcher.metrics.active_seconds
+                components.reader_wait = prefetcher.metrics.wait_seconds
+        else:
+            serial_metrics = ReaderMetrics()
+            _process_serial_supertiles(
+                mask,
+                model,
                 slide,
                 selection,
-                out_x=plan.out_x,
-                out_y=plan.out_y,
-                out_w=plan.out_w,
-                out_h=plan.out_h,
-                target_mpp=cfg.model.target_mpp,
+                supertiles,
+                cfg,
+                device,
+                out_w,
+                out_h,
+                serial_metrics,
+                components,
+                batch_stats,
+                run_logger,
             )
-            timing.read_supertiles += time.perf_counter() - t0
-
-            _infer_and_write_supertile(
-                mask, model, super_arr, plan, cfg, device, out_w, out_h, timing, batch_stats
-            )
+            components.reader_active = serial_metrics.active_seconds
+            components.reader_wait = serial_metrics.wait_seconds
+        wall.processing_loop = time.perf_counter() - loop_t0
 
         mask.flush()
 
-        # --- stage: export outputs ---
         t0 = time.perf_counter()
-        mask_tiff_path = None
+        actual_output_mpp_x = (slide.metadata.width * slide.metadata.mpp_x) / max(out_w, 1)
+        actual_output_mpp_y = (slide.metadata.height * slide.metadata.mpp_y) / max(out_h, 1)
         if cfg.output.write_tiff:
             mask_tiff_path = export_mask_tiff(
                 mask,
                 run_dir / "mask.tif",
+                mpp_x=actual_output_mpp_x,
+                mpp_y=actual_output_mpp_y,
                 bigtiff=cfg.output.bigtiff,
                 compression=cfg.output.compression,
+                tile_size=cfg.output.tiff_tile_size,
+                description={
+                    "run_id": run_id,
+                    "slide": str(cfg.paths.slide_path),
+                    "target_mpp": cfg.model.target_mpp,
+                    "actual_output_mpp_x": actual_output_mpp_x,
+                    "actual_output_mpp_y": actual_output_mpp_y,
+                    "roi": asdict(planning.roi),
+                },
             )
-
-        previews: dict[str, Path] = {}
+        if cfg.output.write_ome_tiff:
+            mask_ome_tiff_path = export_mask_ome_tiff(
+                mask,
+                run_dir / "mask.ome.tif",
+                mpp_x=actual_output_mpp_x,
+                mpp_y=actual_output_mpp_y,
+                bigtiff=cfg.output.bigtiff,
+                compression=cfg.output.compression,
+                tile_size=cfg.output.ome_tile_size,
+                pyramid_min_size=cfg.output.ome_pyramid_min_size,
+            )
         if cfg.output.write_previews:
             previews = save_previews(
                 slide,
@@ -257,26 +327,29 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
                 max_size=cfg.output.preview_max_size,
                 tissue_mask=coarse_mask,
             )
-        timing.export_outputs = time.perf_counter() - t0
+        wall.export_outputs = time.perf_counter() - t0
+        run_logger.event(
+            "exports_complete",
+            mask_tiff=mask_tiff_path,
+            mask_ome_tiff=mask_ome_tiff_path,
+            previews=previews,
+        )
 
-        timing.total = time.perf_counter() - wall_start
+        wall.total = time.perf_counter() - wall_start
         finished_at = utc_now_iso()
 
-        elapsed = timing.total
-        gi = git_info()
-        tp = planning.tissue_patches
-        rp = planning.roi_patches
         gp = planning.total_grid_patches
-        safe_elapsed = max(elapsed, 1e-9)
-        st_count = planning.supertiles
+        rp = planning.roi_patches
+        cp = planning.tissue_patches
+        safe_elapsed = max(wall.total, 1e-9)
+        processing_elapsed = max(wall.processing_loop, 1e-9)
 
-        run_json_path = run_dir / "run.json"
         dump_json(
             {
                 "run_id": run_id,
                 "started_at_utc": started_at,
                 "finished_at_utc": finished_at,
-                "git": gi,
+                "git": git_info(),
                 "slide": asdict(slide.metadata),
                 "selection": asdict(selection),
                 "output_shape": {"width": out_w, "height": out_h},
@@ -284,24 +357,39 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
                     "roi": asdict(planning.roi),
                     "total_grid_patches": gp,
                     "roi_patches": rp,
-                    "candidate_patches": tp,
-                    "supertiles": st_count,
+                    "candidate_patches": cp,
+                    "supertiles": planning.supertiles,
                     "edge_patches": planning.edge_patches,
                     "padded_patches": planning.padded_patches,
                     "roi_area_fraction": rp / max(gp, 1),
-                    "candidate_fraction_of_roi": tp / max(rp, 1),
-                    "candidate_fraction_of_grid": tp / max(gp, 1),
-                    "avg_candidates_per_supertile": tp / max(st_count, 1),
+                    "candidate_fraction_of_roi": cp / max(rp, 1),
+                    "candidate_fraction_of_grid": cp / max(gp, 1),
+                    "avg_candidates_per_supertile": cp / max(planning.supertiles, 1),
                     "num_batches": batch_stats.num_batches,
                     "mean_batch_fill": batch_stats.mean_batch_fill,
                 },
                 "device": str(device),
                 "cache_enabled": cache_enabled,
-                "timing": asdict(timing),
+                "prefetch": {
+                    "enabled": use_prefetch,
+                    "queue_size": cfg.runtime.prefetch_queue_size,
+                },
+                "timing": {
+                    "wall": asdict(wall),
+                    "components": asdict(components),
+                    "semantics": {
+                        "reader_active": "actual time spent reading/decoding/resizing supertiles; can overlap model inference when prefetch is enabled",
+                        "reader_wait": "critical-path stall time where the main thread blocked waiting for the next supertile",
+                        "model_infer": "actual model execution time on inference batches",
+                        "writeback": "actual time spent thresholding and stitching predictions into the output mask",
+                        "wall": "mutually exclusive wall-clock buckets; these add to total wall time",
+                    },
+                },
                 "throughput": {
                     "grid_patches_per_second": gp / safe_elapsed,
                     "roi_patches_per_second": rp / safe_elapsed,
-                    "candidate_patches_per_second": tp / safe_elapsed,
+                    "candidate_patches_per_second": cp / safe_elapsed,
+                    "candidate_patches_per_processing_second": cp / processing_elapsed,
                 },
                 "config": cfg.model_dump(),
                 "coordinate_mapping": {
@@ -310,6 +398,15 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
                 },
             },
             run_json_path,
+        )
+        run_logger.event(
+            "run_complete",
+            total_wall_seconds=wall.total,
+            processing_wall_seconds=wall.processing_loop,
+            reader_active_seconds=components.reader_active,
+            reader_wait_seconds=components.reader_wait,
+            infer_active_seconds=components.model_infer,
+            writeback_seconds=components.writeback,
         )
     finally:
         slide.close()
@@ -323,9 +420,11 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
         run_dir=run_dir,
         mask_memmap=mask_memmap_artifact,
         mask_tiff=mask_tiff_path,
+        mask_ome_tiff=mask_ome_tiff_path,
         preview_overlay=previews.get("preview_overlay"),
         preview_mask=previews.get("preview_mask"),
         preview_tissue=previews.get("preview_tissue"),
+        events_jsonl=run_logger.path,
         run_json=run_json_path,
     )
     return RunSummary(
@@ -333,14 +432,92 @@ def run_baseline(cfg: AppConfig) -> RunSummary:
         slide_path=cfg.paths.slide_path,
         output_shape=(out_h, out_w),
         device=str(device),
-        stage_timing=timing,
+        wall_timing=wall,
+        component_timing=components,
         num_grid_patches=planning.total_grid_patches,
         num_roi_patches=planning.roi_patches,
         num_candidate_patches=planning.tissue_patches,
         num_supertiles=planning.supertiles,
-        patches_per_second=planning.tissue_patches / max(elapsed, 1e-9),
+        patches_per_second=planning.tissue_patches / max(wall.total, 1e-9),
         artifacts=artifacts,
     )
+
+
+def _process_prefetched_supertiles(
+    mask: np.ndarray,
+    model: torch.jit.ScriptModule,
+    prefetcher: SuperTilePrefetcher,
+    cfg: AppConfig,
+    device: torch.device,
+    out_w: int,
+    out_h: int,
+    total_supertiles: int,
+    components: ComponentTiming,
+    batch_stats: BatchStats,
+    run_logger: StructuredRunLogger,
+) -> None:
+    for idx, item in enumerate(prefetcher, start=1):
+        _infer_and_write_supertile(
+            mask,
+            model,
+            item.image,
+            item.plan,
+            cfg,
+            device,
+            out_w,
+            out_h,
+            components,
+            batch_stats,
+        )
+        if idx == 1 or idx == total_supertiles or idx % cfg.runtime.log_every_supertiles == 0:
+            run_logger.event("supertile_progress", completed=idx, total=total_supertiles)
+
+
+def _process_serial_supertiles(
+    mask: np.ndarray,
+    model: torch.jit.ScriptModule,
+    slide: OpenSlideReader,
+    selection: LevelSelection,
+    supertiles: list[SuperTilePlan],
+    cfg: AppConfig,
+    device: torch.device,
+    out_w: int,
+    out_h: int,
+    reader_metrics: ReaderMetrics,
+    components: ComponentTiming,
+    batch_stats: BatchStats,
+    run_logger: StructuredRunLogger,
+) -> None:
+    total_supertiles = len(supertiles)
+    for idx, plan in enumerate(supertiles, start=1):
+        t0 = time.perf_counter()
+        super_arr = read_output_region(
+            slide,
+            selection,
+            out_x=plan.out_x,
+            out_y=plan.out_y,
+            out_w=plan.out_w,
+            out_h=plan.out_h,
+            target_mpp=cfg.model.target_mpp,
+        )
+        dt = time.perf_counter() - t0
+        reader_metrics.active_seconds += dt
+        reader_metrics.wait_seconds += dt
+        reader_metrics.num_reads += 1
+        _infer_and_write_supertile(
+            mask,
+            model,
+            super_arr,
+            plan,
+            cfg,
+            device,
+            out_w,
+            out_h,
+            components,
+            batch_stats,
+        )
+        if idx == 1 or idx == total_supertiles or idx % cfg.runtime.log_every_supertiles == 0:
+            run_logger.event("supertile_progress", completed=idx, total=total_supertiles)
 
 
 def _infer_and_write_supertile(
@@ -352,7 +529,7 @@ def _infer_and_write_supertile(
     device: torch.device,
     out_w: int,
     out_h: int,
-    timing: StageTiming,
+    components: ComponentTiming,
     batch_stats: BatchStats,
 ) -> None:
     patches: list[np.ndarray] = []
@@ -363,19 +540,36 @@ def _infer_and_write_supertile(
         ppx = cfg.model.patch_px
         patch = super_arr[local_y : local_y + ppx, local_x : local_x + ppx]
         if patch.shape[:2] != (cfg.model.patch_px, cfg.model.patch_px):
-            pil = Image.fromarray(patch)
-            patch = _resize_patch(pil, cfg.model.patch_px)
+            patch = _resize_patch(Image.fromarray(patch), cfg.model.patch_px)
         patches.append(patch)
         metas.append(meta)
         if len(patches) >= cfg.model.batch_size:
             _infer_and_write_batch(
-                mask, model, patches, metas, cfg, device, out_w, out_h, timing, batch_stats
+                mask,
+                model,
+                patches,
+                metas,
+                cfg,
+                device,
+                out_w,
+                out_h,
+                components,
+                batch_stats,
             )
             patches.clear()
             metas.clear()
     if patches:
         _infer_and_write_batch(
-            mask, model, patches, metas, cfg, device, out_w, out_h, timing, batch_stats
+            mask,
+            model,
+            patches,
+            metas,
+            cfg,
+            device,
+            out_w,
+            out_h,
+            components,
+            batch_stats,
         )
 
 
@@ -388,7 +582,7 @@ def _infer_and_write_batch(
     device: torch.device,
     out_w: int,
     out_h: int,
-    timing: StageTiming,
+    components: ComponentTiming,
     batch_stats: BatchStats,
 ) -> None:
     batch_stats.num_batches += 1
@@ -403,7 +597,7 @@ def _infer_and_write_batch(
             raw = model(batch)
         probs_t = output_to_probs(raw, cfg.model.patch_px, apply_sigmoid=cfg.model.apply_sigmoid)
     probs = probs_t.detach().cpu().numpy()
-    timing.model_infer += time.perf_counter() - t0
+    components.model_infer += time.perf_counter() - t0
 
     t0 = time.perf_counter()
     for prob, meta in zip(probs, metas, strict=True):
@@ -417,4 +611,4 @@ def _infer_and_write_batch(
             out_h=out_h,
             threshold=cfg.model.threshold,
         )
-    timing.writeback += time.perf_counter() - t0
+    components.writeback += time.perf_counter() - t0
