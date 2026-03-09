@@ -72,7 +72,8 @@ class OpenSlideReader:
             import openslide  # type: ignore
         except ImportError as exc:  # pragma: no cover
             raise RuntimeError(
-                "OpenSlide is not available. Install openslide-python and the native OpenSlide runtime."
+                "OpenSlide is not available. "
+                "Install openslide-python and the native OpenSlide runtime."
             ) from exc
         return openslide
 
@@ -281,7 +282,12 @@ class OpenSlideReader:
         except ValueError:
             return (255, 255, 255, 255)
 
-    def read_region_rgb(self, location0: tuple[int, int], level: int, size: tuple[int, int]) -> Image.Image:
+    def read_region_rgb(
+        self,
+        location0: tuple[int, int],
+        level: int,
+        size: tuple[int, int],
+    ) -> Image.Image:
         rgba = self._slide.read_region(location0, level, size)
         bg = Image.new("RGBA", rgba.size, self._background_rgba())
         rgb = Image.alpha_composite(bg, rgba).convert("RGB")

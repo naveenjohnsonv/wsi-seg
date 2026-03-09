@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 import numpy as np
 import tifffile
@@ -17,6 +18,19 @@ def create_mask_memmap(path: str | Path, shape: tuple[int, int]) -> np.memmap:
 
 def _pixels_per_centimeter(mpp: float) -> float:
     return 10000.0 / float(mpp)
+
+
+def _count_pyramid_levels(shape: tuple[int, ...], min_size: int) -> int:
+    count = 0
+    h, w = shape[0], shape[1]
+    effective_min = max(2, min_size)
+    while min(h, w) >= effective_min:
+        nh, nw = h // 2, w // 2
+        if nh == h and nw == w:
+            break
+        count += 1
+        h, w = nh, nw
+    return count
 
 
 def _iter_pyramid_levels(mask: np.ndarray, min_size: int) -> Iterator[np.ndarray]:
@@ -74,13 +88,13 @@ def export_mask_ome_tiff(
     mpp_x: float,
     mpp_y: float,
     bigtiff: bool = True,
-    compression: str | None = None,
+    compression: str | None = "zlib",
     tile_size: int = 512,
     pyramid_min_size: int = 512,
 ) -> Path:
     out = Path(path)
     base = np.asarray(mask, dtype=np.uint8)
-    pyramid = list(_iter_pyramid_levels(base, pyramid_min_size))
+    num_levels = _count_pyramid_levels(base.shape, pyramid_min_size)
     ome_meta = {
         "axes": "YX",
         "PhysicalSizeX": float(mpp_x),
@@ -98,7 +112,7 @@ def export_mask_ome_tiff(
             "metadata": ome_meta,
             "resolution": (_pixels_per_centimeter(mpp_x), _pixels_per_centimeter(mpp_y)),
             "resolutionunit": "CENTIMETER",
-            "subifds": len(pyramid),
+            "subifds": num_levels,
         }
         if tile is not None:
             base_options["tile"] = tile
@@ -106,7 +120,7 @@ def export_mask_ome_tiff(
 
         level_mpp_x = float(mpp_x)
         level_mpp_y = float(mpp_y)
-        for level in pyramid:
+        for level in _iter_pyramid_levels(base, pyramid_min_size):
             level_mpp_x *= 2.0
             level_mpp_y *= 2.0
             level_tile = _tile_option(level.shape, tile_size)

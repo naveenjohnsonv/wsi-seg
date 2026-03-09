@@ -78,11 +78,11 @@ class RuntimeConfig(BaseModel):
 class OutputConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    write_tiff: bool = True
+    write_tiff: bool = False
     bigtiff: bool = True
     compression: str | None = "zlib"
     tiff_tile_size: int = 512
-    write_ome_tiff: bool = False
+    write_ome_tiff: bool = True
     ome_tile_size: int = 512
     ome_pyramid_min_size: int = 512
     write_previews: bool = True

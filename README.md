@@ -34,7 +34,7 @@ It is designed around the constraints of digital pathology:
 ### Phase 3 — run history and observability
 - **per-run output directories**: `outputs/<slide_stem>/<run_id>/`
 - **run ID** format: `<UTC timestamp>_<git-sha7>_<config-hash8>`
-- **stage-level timing**: open slide, plan+mask, read, infer, writeback, export
+- **wall + component timing**: open slide, plan+mask, load model, processing loop, export; reader active/wait, model infer, writeback
 - **three throughput tiers**: grid/ROI/candidate patches per second
 - **planning fractions**: ROI area fraction, candidate fraction of ROI and grid
 - **batch stats**: number of batches, mean batch fill
@@ -43,9 +43,22 @@ It is designed around the constraints of digital pathology:
 ### Phase 4 — unified CLI
 - **single `run` command** replaces `run`, `run-many`, and `benchmark`
 - `--slide-path` accepts a file (single slide) or directory (batch); defaults to `data/slides`
+- `--recursive` recurses into directories for slide discovery
+- `--verbose` enables structured event logging
 - `--no-exports` isolates core pipeline timing without TIFF/preview cost
 - **intermediate memmaps are discarded by default**; `--keep-memmap` preserves them for debugging
 - **no paths in `default.yaml`** — sensible defaults live in code
+
+### Phase 5 — async prefetch, OME-TIFF pyramid, structured logging
+- **async supertile prefetch**: background reader thread with queue-based pipeline overlapping I/O and inference
+- **pyramidal OME-TIFF export** (`mask.ome.tif`): SubIFD pyramid levels, tiled BigTIFF, zlib compression, OME `PhysicalSizeX`/`PhysicalSizeY` metadata — QuPath-compatible
+- **OME-TIFF is the default output**; flat TIFF (`mask.tif`) disabled by default, kept as an optional processing artifact
+- **mask stored as 0/255** (not 0/1) for standalone viewing usability
+- **lazy pyramid generation**: levels are computed and written one at a time, not materialized as a list, keeping peak memory bounded
+- **in-place memmap scaling**: 0→255 scaling happens on the memmap without allocating a full copy
+- **structured run logger**: `events.jsonl` with timestamped events throughout the pipeline
+- **multi-source MPP extraction**: openslide properties, Aperio keys, text description, TIFF resolution tags, objective power estimation
+- **multi-format slide discovery**: `.mrxs`, `.svs`, `.ndpi`, `.tif`, `.tiff`, `.scn`, `.bif`, `.vms`, `.vmu`
 
 ## Chosen architecture
 
@@ -57,7 +70,7 @@ It is designed around the constraints of digital pathology:
 - read granularity: **supertile reads**
 - stitching: **overlap + center-crop writeback**
 - intermediate storage: **NumPy memmap**
-- final outputs: **TIFF + previews + run manifest**
+- final outputs: **pyramidal OME-TIFF + previews + run manifest**
 
 ## Repo layout
 
@@ -74,8 +87,10 @@ It is designed around the constraints of digital pathology:
 │       ├── cli.py
 │       ├── config.py
 │       ├── geometry.py
+│       ├── logging_utils.py
 │       ├── model.py
 │       ├── pipeline.py
+│       ├── prefetch.py
 │       ├── preview.py
 │       ├── scheduler.py
 │       ├── slide.py
@@ -86,7 +101,9 @@ It is designed around the constraints of digital pathology:
 │   ├── test_config.py
 │   ├── test_pipeline_math.py
 │   ├── test_scheduler.py
-│   └── test_utils.py
+│   ├── test_slide_metadata.py
+│   ├── test_utils.py
+│   └── test_writer.py
 ├── .gitignore
 ├── Dockerfile
 ├── pyproject.toml
@@ -136,10 +153,22 @@ Run all slides in a specific directory:
 uv run wsi-seg run --slide-path data/slides
 ```
 
+Recursively discover slides in nested directories:
+
+```bash
+uv run wsi-seg run --slide-path data/slides --recursive
+```
+
 Isolate core pipeline timing (skip TIFF and preview exports):
 
 ```bash
 uv run wsi-seg run --no-exports
+```
+
+Enable structured event logging:
+
+```bash
+uv run wsi-seg run --verbose
 ```
 
 Preserve the intermediate memmap for debugging:
@@ -177,7 +206,8 @@ Each run creates its own directory under `outputs/<slide_stem>/<run_id>/`:
 outputs/
 └── MJUL22785295_001/
     └── 20260308T131422Z_4c16605_cfg9a21f3/
-        ├── mask.tif              # final binary mask
+        ├── mask.ome.tif          # pyramidal OME-TIFF (QuPath-compatible)
+        ├── events.jsonl          # structured run events with timestamps
         ├── preview_mask.png
         ├── preview_overlay.png
         ├── preview_tissue.png    # coarse tissue mask used for scheduling
@@ -186,13 +216,14 @@ outputs/
 
 The `run_id` is `<UTC timestamp>_<git-sha7>_<config-hash8>`, giving full traceability.
 By default the temporary memmap is removed after the run; use `--keep-memmap` when you want to inspect it.
+When `write_tiff: true` is set in config, a flat `mask.tif` is also written (off by default).
 
 `run.json` includes:
 - `run_id`, `started_at_utc`, `finished_at_utc`
 - `git` block: commit SHA, branch, dirty flag
-- slide metadata and chosen level
+- slide metadata (including MPP source) and chosen level
 - planning statistics with area fractions and batch stats
-- stage-level timing breakdown
+- wall timing + component timing breakdown with overlap semantics
 - three throughput tiers: grid / ROI / candidate patches per second
 - config used for the run
 - coordinate mapping notes back to level-0 pixels
@@ -202,12 +233,11 @@ Batch runs write their aggregate reports under `outputs/_batches/<batch_id>/`.
 ## Current limitations
 
 - It uses a coarse, conservative tissue mask heuristic rather than a learned tissue segmenter.
-- It uses **synchronous supertile execution**; reader prefetch is still a future improvement.
-- It exports a simple TIFF mask, not yet a pyramidal OME-TIFF.
+- Pyramid downsampling uses nearest-neighbor subsampling (`[::2, ::2]`), which is correct for binary masks but would need interpolation for probability maps.
 
 ## Suggested next steps
 
 1. visually verify tissue masks across all three slides
-2. add buffered reader prefetch for supertiles
-3. add optional bounds-cropped intermediate/output mode
+2. add optional bounds-cropped intermediate/output mode
+3. add manual GitHub Actions smoke test for a real slide
 4. add probability blending / gaussian weighting as an optional stitcher

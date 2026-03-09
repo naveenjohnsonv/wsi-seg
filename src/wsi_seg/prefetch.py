@@ -3,9 +3,9 @@ from __future__ import annotations
 import queue
 import threading
 import time
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
@@ -99,7 +99,12 @@ class SuperTilePrefetcher:
                     with self._lock:
                         self.metrics.active_seconds += active_dt
                         self.metrics.num_reads += 1
-                    self._queue.put(_QueueItem(kind="data", payload=PrefetchedSuperTile(plan=plan, image=image)))
+                    self._queue.put(
+                        _QueueItem(
+                            kind="data",
+                            payload=PrefetchedSuperTile(plan=plan, image=image),
+                        )
+                    )
                 self._queue.put(_QueueItem(kind="done"))
         except Exception as exc:  # pragma: no cover
             self._queue.put(_QueueItem(kind="error", error=exc))

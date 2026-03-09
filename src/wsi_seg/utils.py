@@ -3,13 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+from collections.abc import Iterable
 from dataclasses import asdict, is_dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import torch
-
 
 SUPPORTED_SLIDE_SUFFIXES = (
     ".mrxs",

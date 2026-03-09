@@ -17,11 +17,11 @@ runtime:
   log_every_supertiles: 8
 
 output:
-  write_tiff: true
+  write_tiff: false
   bigtiff: true
   compression: zlib
   tiff_tile_size: 512
-  write_ome_tiff: false
+  write_ome_tiff: true
   ome_tile_size: 512
   ome_pyramid_min_size: 512
   write_previews: true

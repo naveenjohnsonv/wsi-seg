@@ -62,18 +62,25 @@ def _supported_suffixes_text() -> str:
 
 @app.command("inspect")
 def inspect_slide(
-    config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")] = Path("configs/default.yaml"),
+    config_path: Annotated[
+        Path,
+        typer.Argument(help="Path to YAML config."),
+    ] = Path("configs/default.yaml"),
     slide_path: Annotated[
         Path | None,
         typer.Option("--slide-path", help="Slide file or directory to inspect."),
     ] = None,
-    recursive: Annotated[bool, typer.Option("--recursive", help="Recurse into directories.")] = False,
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive", help="Recurse into directories."),
+    ] = False,
 ) -> None:
     cfg = _load_config(config_path)
     target, slides = _resolve_slides(cfg, slide_path, recursive=recursive)
     if not slides:
         raise typer.BadParameter(
-            f"No supported slide files found in {target}. Supported suffixes: {_supported_suffixes_text()}"
+            f"No supported slide files found in {target}. "
+            f"Supported suffixes: {_supported_suffixes_text()}"
         )
 
     for sp in slides:
@@ -83,7 +90,7 @@ def inspect_slide(
             out_w, out_h, planning, _, coarse_mask = plan_run(slide_cfg, slide)
             md = slide.metadata
 
-            table = Table(title=f"Slide inspection — {sp.name}")
+            table = Table(title=f"Slide inspection - {sp.name}")
             table.add_column("Field")
             table.add_column("Value")
             table.add_row("Path", str(md.path))
@@ -102,14 +109,20 @@ def inspect_slide(
             table.add_row("Estimated mask bytes", format_bytes(out_w * out_h))
             table.add_row(
                 "Schedule ROI",
-                f"x={planning.roi.x}, y={planning.roi.y}, w={planning.roi.width}, h={planning.roi.height}",
+                (
+                    f"x={planning.roi.x}, y={planning.roi.y}, "
+                    f"w={planning.roi.width}, h={planning.roi.height}"
+                ),
             )
             table.add_row("Grid patches", str(planning.total_grid_patches))
             table.add_row("ROI patches", str(planning.roi_patches))
             table.add_row("Candidate patches", str(planning.tissue_patches))
             table.add_row("Supertiles", str(planning.supertiles))
             if coarse_mask is not None:
-                table.add_row("Coarse tissue mask", f"{coarse_mask.shape[1]} x {coarse_mask.shape[0]}")
+                table.add_row(
+                    "Coarse tissue mask",
+                    f"{coarse_mask.shape[1]} x {coarse_mask.shape[0]}",
+                )
             if md.bounds is not None:
                 table.add_row(
                     "Bounds",
@@ -134,7 +147,10 @@ def inspect_slide(
 
 @app.command("probe-model")
 def probe_model_cmd(
-    config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")] = Path("configs/default.yaml"),
+    config_path: Annotated[
+        Path,
+        typer.Argument(help="Path to YAML config."),
+    ] = Path("configs/default.yaml"),
     model_path: Annotated[
         Path | None,
         typer.Option("--model-path", help="Override model path from config."),
@@ -248,7 +264,14 @@ def _print_batch_summary(summaries: list[RunSummary], cfg: AppConfig) -> None:
         writer = csv.DictWriter(f, fieldnames=list(batch_rows[0].keys()))
         writer.writeheader()
         writer.writerows(batch_rows)
-    dump_json({"batch_id": batch_id, "num_slides": len(batch_rows), "slides": batch_rows}, json_path)
+    dump_json(
+        {
+            "batch_id": batch_id,
+            "num_slides": len(batch_rows),
+            "slides": batch_rows,
+        },
+        json_path,
+    )
 
     table = Table(title="Batch run summary")
     table.add_column("Slide")
@@ -270,7 +293,10 @@ def _print_batch_summary(summaries: list[RunSummary], cfg: AppConfig) -> None:
 
 @app.command("run")
 def run_cmd(
-    config_path: Annotated[Path, typer.Argument(help="Path to YAML config.")] = Path("configs/default.yaml"),
+    config_path: Annotated[
+        Path,
+        typer.Argument(help="Path to YAML config."),
+    ] = Path("configs/default.yaml"),
     slide_path: Annotated[
         Path | None,
         typer.Option("--slide-path", help="Slide file or directory. Default: data/slides."),
@@ -297,8 +323,14 @@ def run_cmd(
             help="Keep or discard the intermediate memmap after the run.",
         ),
     ] = None,
-    recursive: Annotated[bool, typer.Option("--recursive", help="Recurse into directories.")] = False,
-    verbose: Annotated[bool, typer.Option("--verbose", help="Enable richer logging.")] = False,
+    recursive: Annotated[
+        bool,
+        typer.Option("--recursive", help="Recurse into directories."),
+    ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", help="Enable richer logging."),
+    ] = False,
 ) -> None:
     configure_logging(verbose=verbose)
     cfg = _load_config(config_path)
@@ -320,7 +352,8 @@ def run_cmd(
     target, slides = _resolve_slides(cfg, slide_path, recursive=recursive)
     if not slides:
         raise typer.BadParameter(
-            f"No supported slide files found in {target}. Supported suffixes: {_supported_suffixes_text()}"
+            f"No supported slide files found in {target}. "
+            f"Supported suffixes: {_supported_suffixes_text()}"
         )
 
     summaries: list[RunSummary] = []

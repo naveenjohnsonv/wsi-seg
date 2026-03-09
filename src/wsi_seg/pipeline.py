@@ -29,7 +29,7 @@ from wsi_seg.utils import (
     git_info,
     resolve_device,
     supports_amp,
-    utc_now_iso
+    utc_now_iso,
 )
 from wsi_seg.writer import create_mask_memmap, export_mask_ome_tiff, export_mask_tiff
 
@@ -290,6 +290,8 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
         t0 = time.perf_counter()
         actual_output_mpp_x = (slide.metadata.width * slide.metadata.mpp_x) / max(out_w, 1)
         actual_output_mpp_y = (slide.metadata.height * slide.metadata.mpp_y) / max(out_h, 1)
+        mask *= np.uint8(255)
+        mask.flush()
         if cfg.output.write_tiff:
             mask_tiff_path = export_mask_tiff(
                 mask,
@@ -378,11 +380,23 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
                     "wall": asdict(wall),
                     "components": asdict(components),
                     "semantics": {
-                        "reader_active": "actual time spent reading/decoding/resizing supertiles; can overlap model inference when prefetch is enabled",
-                        "reader_wait": "critical-path stall time where the main thread blocked waiting for the next supertile",
+                        "reader_active": (
+                            "actual time spent reading/decoding/resizing supertiles; "
+                            "can overlap model inference when prefetch is enabled"
+                        ),
+                        "reader_wait": (
+                            "critical-path stall time where the main thread blocked "
+                            "waiting for the next supertile"
+                        ),
                         "model_infer": "actual model execution time on inference batches",
-                        "writeback": "actual time spent thresholding and stitching predictions into the output mask",
-                        "wall": "mutually exclusive wall-clock buckets; these add to total wall time",
+                        "writeback": (
+                            "actual time spent thresholding and stitching predictions "
+                            "into the output mask"
+                        ),
+                        "wall": (
+                            "mutually exclusive wall-clock buckets; "
+                            "these add to total wall time"
+                        ),
                     },
                 },
                 "throughput": {
