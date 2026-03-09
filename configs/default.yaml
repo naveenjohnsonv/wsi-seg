@@ -13,7 +13,7 @@ model:
   apply_sigmoid: true
 
 runtime:
-  device: cuda
+  device: auto  # auto | cuda | cuda:N | xpu | xpu:N | mps | cpu
   use_amp: true
   openslide_cache_bytes: 536870912
   torch_num_threads: 1

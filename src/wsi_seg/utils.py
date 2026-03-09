@@ -25,9 +25,35 @@ def dump_json(data: dict[str, Any], path: str | Path) -> None:
         json.dump(data, f, indent=2, cls=JsonEncoder)
 
 
+_ASYNC_TRANSFER_DEVICES = {"cuda", "xpu"}
+_AMP_DEVICES = {"cuda", "xpu"}
+
+
+def supports_non_blocking(device: torch.device) -> bool:
+    return device.type in _ASYNC_TRANSFER_DEVICES
+
+
+def supports_amp(device: torch.device) -> bool:
+    return device.type in _AMP_DEVICES
+
+
+def _auto_device() -> torch.device:
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    if getattr(torch, "xpu", None) and torch.xpu.is_available():
+        return torch.device("xpu")
+    if getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
+        return torch.device("mps")
+    return torch.device("cpu")
+
+
 def resolve_device(requested: str) -> torch.device:
     req = requested.strip().lower()
+    if req == "auto":
+        return _auto_device()
     if req.startswith("cuda") and torch.cuda.is_available():
+        return torch.device(requested)
+    if req.startswith("xpu") and getattr(torch, "xpu", None) and torch.xpu.is_available():
         return torch.device(requested)
     if req == "mps" and getattr(torch.backends, "mps", None) and torch.backends.mps.is_available():
         return torch.device("mps")

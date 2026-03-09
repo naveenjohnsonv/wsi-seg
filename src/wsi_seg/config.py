@@ -54,7 +54,7 @@ class ModelConfig(BaseModel):
 class RuntimeConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
-    device: str = "cuda"
+    device: str = "auto"
     use_amp: bool = True
     openslide_cache_bytes: int = 512 * 1024 * 1024
     torch_num_threads: int = 1
