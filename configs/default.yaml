@@ -19,7 +19,7 @@ runtime:
   openslide_cache_bytes: 536870912
   torch_num_threads: 1
   prefetch_supertiles: true
-  prefetch_queue_size: 2
+  prefetch_queue_size: 6
   log_every_supertiles: 8
 
 output:
