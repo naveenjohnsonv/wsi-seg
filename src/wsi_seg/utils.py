@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from collections.abc import Iterable
 from dataclasses import asdict, is_dataclass
@@ -91,6 +92,42 @@ def utc_now_iso() -> str:
     return datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _parse_env_bool(value: str | None) -> bool | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "y", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "n", "off"}:
+        return False
+    return None
+
+
+def _short_sha(value: str | None) -> str | None:
+    if value is None:
+        return None
+    trimmed = value.strip()
+    if not trimmed:
+        return None
+    return trimmed[:7]
+
+
+def _env_git_info() -> dict[str, Any]:
+    return {
+        "git_commit": _short_sha(
+            os.getenv("WSI_SEG_GIT_COMMIT")
+            or os.getenv("GITHUB_SHA")
+            or os.getenv("CI_COMMIT_SHA")
+        ),
+        "git_branch": (
+            os.getenv("WSI_SEG_GIT_BRANCH")
+            or os.getenv("GITHUB_REF_NAME")
+            or os.getenv("CI_COMMIT_REF_NAME")
+        ),
+        "git_dirty": _parse_env_bool(os.getenv("WSI_SEG_GIT_DIRTY")),
+    }
+
+
 def git_info() -> dict[str, Any]:
     info: dict[str, Any] = {"git_commit": None, "git_branch": None, "git_dirty": None}
     try:
@@ -99,7 +136,7 @@ def git_info() -> dict[str, Any]:
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        info["git_commit"] = sha
+        info["git_commit"] = sha or None
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     try:
@@ -120,6 +157,11 @@ def git_info() -> dict[str, Any]:
         info["git_dirty"] = rc != 0
     except FileNotFoundError:
         pass
+
+    env_info = _env_git_info()
+    for key, value in env_info.items():
+        if info.get(key) is None and value is not None:
+            info[key] = value
     return info
 
 

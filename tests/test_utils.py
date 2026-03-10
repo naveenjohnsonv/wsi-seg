@@ -1,4 +1,5 @@
 import re
+import subprocess
 from pathlib import Path
 
 from wsi_seg.utils import (
@@ -100,3 +101,22 @@ def test_discover_slide_paths_accepts_supported_suffixes(tmp_path: Path) -> None
     found = discover_slide_paths(tmp_path)
     assert found == sorted(found_expected)
     assert ".svs" in SUPPORTED_SLIDE_SUFFIXES
+
+
+def test_git_info_uses_environment_fallback(monkeypatch) -> None:
+    def _raise_check_output(*args, **kwargs):
+        raise FileNotFoundError
+
+    def _raise_call(*args, **kwargs):
+        raise FileNotFoundError
+
+    monkeypatch.setenv("WSI_SEG_GIT_COMMIT", "abcdef123456")
+    monkeypatch.setenv("WSI_SEG_GIT_BRANCH", "container-run")
+    monkeypatch.setenv("WSI_SEG_GIT_DIRTY", "false")
+    monkeypatch.setattr(subprocess, "check_output", _raise_check_output)
+    monkeypatch.setattr(subprocess, "call", _raise_call)
+
+    info = git_info()
+    assert info["git_commit"] == "abcdef1"
+    assert info["git_branch"] == "container-run"
+    assert info["git_dirty"] is False
