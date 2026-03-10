@@ -144,7 +144,7 @@ The pipeline has been validated under constrained settings (batch size 1, 64 MiB
 
 ### Configuration presets
 
-These are not just the knobs to change in `configs/default.yaml` depending on the use case.
+These are the knobs to change in `configs/default.yaml` depending on the use case.
 
 | Knob | Fast local test | Full export run |
 |---|---|---|
