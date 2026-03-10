@@ -27,12 +27,17 @@ class _DummySlide:
         out_h = round(self.metadata.height * self.metadata.mpp_y / target_mpp)
         return out_w, out_h
 
+    def output_frame(self, target_mpp: float, use_bounds: bool):
+        if use_bounds:
+            return SimpleNamespace(out_w=200, out_h=150)
+        return SimpleNamespace(out_w=500, out_h=400)
+
 
 def test_schedule_roi_uses_bounds_projection() -> None:
     slide = _DummySlide()
     out_w, out_h, roi = schedule_roi(slide, target_mpp=1.0, use_bounds=True)
-    assert (out_w, out_h) == (500, 400)
-    assert (roi.x, roi.y, roi.width, roi.height) == (100, 50, 200, 150)
+    assert (out_w, out_h) == (200, 150)
+    assert (roi.x, roi.y, roi.width, roi.height) == (0, 0, 200, 150)
 
 
 def test_plan_patch_grid_filters_by_roi_and_mask() -> None:

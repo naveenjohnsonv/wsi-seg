@@ -57,6 +57,20 @@ class LevelSelection:
     resize_factor_y: float
 
 
+@dataclass(slots=True)
+class OutputFrame:
+    # Region exported by the pipeline, expressed both in native level-0 pixels
+    # and in the target raster space written to disk.
+    origin_x_level0: int
+    origin_y_level0: int
+    width_level0: int
+    height_level0: int
+    out_w: int
+    out_h: int
+    actual_output_mpp_x: float
+    actual_output_mpp_y: float
+
+
 class OpenSlideReader:
     _TEXT_MPP_PATTERNS = (
         r"\bmpp(?:[_\s-]*x)?\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)",
@@ -346,6 +360,8 @@ class OpenSlideReader:
         policy: str = "nearest",
         max_native_oversample_factor: float = 2.0,
     ) -> LevelSelection:
+        # `nearest` minimizes resize error. The prefer-higher policies allow a
+        # finer native level when that stays within an acceptable oversampling cap.
         if policy == "nearest":
             best = self._nearest_level(target_mpp)
         elif policy == "prefer_higher":
@@ -374,6 +390,44 @@ class OpenSlideReader:
         out_w = max(1, int(round(self.metadata.width * self.metadata.mpp_x / target_mpp)))
         out_h = max(1, int(round(self.metadata.height * self.metadata.mpp_y / target_mpp)))
         return out_w, out_h
+
+    def output_frame(self, target_mpp: float, use_bounds: bool) -> OutputFrame:
+        # The exported mask lives in target-MPP space, not in native level-0
+        # raster space. We therefore compute a local output canvas for either the
+        # whole slide or the native bounds region, then derive the *actual* MPP
+        # after integer rounding so the written metadata stays physically correct.
+        if use_bounds and self.metadata.bounds is not None:
+            origin_x_level0 = self.metadata.bounds.x
+            origin_y_level0 = self.metadata.bounds.y
+            width_level0 = self.metadata.bounds.width
+            height_level0 = self.metadata.bounds.height
+        else:
+            origin_x_level0 = 0
+            origin_y_level0 = 0
+            width_level0 = self.metadata.width
+            height_level0 = self.metadata.height
+
+        out_w = max(
+            1,
+            int(round(width_level0 * self.metadata.mpp_x / target_mpp)),
+        )
+        out_h = max(
+            1,
+            int(round(height_level0 * self.metadata.mpp_y / target_mpp)),
+        )
+        actual_output_mpp_x = (width_level0 * self.metadata.mpp_x) / out_w
+        actual_output_mpp_y = (height_level0 * self.metadata.mpp_y) / out_h
+
+        return OutputFrame(
+            origin_x_level0=origin_x_level0,
+            origin_y_level0=origin_y_level0,
+            width_level0=width_level0,
+            height_level0=height_level0,
+            out_w=out_w,
+            out_h=out_h,
+            actual_output_mpp_x=actual_output_mpp_x,
+            actual_output_mpp_y=actual_output_mpp_y,
+        )
 
     def _background_rgba(self) -> tuple[int, int, int, int]:
         text = self.metadata.background_hex
@@ -416,21 +470,26 @@ def read_output_region(
     slide: OpenSlideReader,
     selection: LevelSelection,
     *,
+    frame: OutputFrame,
     out_x: int,
     out_y: int,
     out_w: int,
     out_h: int,
-    target_mpp: float,
 ) -> np.ndarray:
+    # Map from local output-frame pixels -> native level-0 pixels -> chosen
+    # pyramid level read size. The final resize normalizes the decoded region
+    # into the exact output raster expected by scheduling and stitching.
     mpp_x = slide.metadata.mpp_x
     mpp_y = slide.metadata.mpp_y
     level_mpp_x = selection.level_mpp_x
     level_mpp_y = selection.level_mpp_y
+    output_mpp_x = frame.actual_output_mpp_x
+    output_mpp_y = frame.actual_output_mpp_y
 
-    read_x = int(round(out_x * target_mpp / mpp_x))
-    read_y = int(round(out_y * target_mpp / mpp_y))
-    read_w = max(1, int(round(out_w * target_mpp / level_mpp_x)))
-    read_h = max(1, int(round(out_h * target_mpp / level_mpp_y)))
+    read_x = frame.origin_x_level0 + int(round(out_x * output_mpp_x / mpp_x))
+    read_y = frame.origin_y_level0 + int(round(out_y * output_mpp_y / mpp_y))
+    read_w = max(1, int(round(out_w * output_mpp_x / level_mpp_x)))
+    read_h = max(1, int(round(out_h * output_mpp_y / level_mpp_y)))
 
     pil_img = slide.read_region_rgb((read_x, read_y), selection.level, (read_w, read_h))
     if pil_img.size != (out_w, out_h):

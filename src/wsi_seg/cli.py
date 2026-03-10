@@ -95,7 +95,7 @@ def inspect_slide(
                 policy=slide_cfg.model.level_selection_policy,
                 max_native_oversample_factor=slide_cfg.model.max_native_oversample_factor,
             )
-            out_w, out_h, planning, _, coarse_mask = plan_run(slide_cfg, slide)
+            frame, planning, _, coarse_mask = plan_run(slide_cfg, slide)
             md = slide.metadata
 
             table = Table(title=f"Slide inspection - {sp.name}")
@@ -120,10 +120,21 @@ def inspect_slide(
                 "Resize factor x / y",
                 f"{selection.resize_factor_x:.4f} / {selection.resize_factor_y:.4f}",
             )
-            table.add_row("Output mask size", f"{out_w} x {out_h}")
-            table.add_row("Estimated mask bytes", format_bytes(out_w * out_h))
+            table.add_row("Output mask size", f"{frame.out_w} x {frame.out_h}")
+            table.add_row("Estimated mask bytes", format_bytes(frame.out_w * frame.out_h))
             table.add_row(
-                "Schedule ROI",
+                "Output frame level-0",
+                (
+                    f"x={frame.origin_x_level0}, y={frame.origin_y_level0}, "
+                    f"w={frame.width_level0}, h={frame.height_level0}"
+                ),
+            )
+            table.add_row(
+                "Actual output MPP x / y",
+                f"{frame.actual_output_mpp_x:.6f} / {frame.actual_output_mpp_y:.6f}",
+            )
+            table.add_row(
+                "Local output ROI",
                 (
                     f"x={planning.roi.x}, y={planning.roi.y}, "
                     f"w={planning.roi.width}, h={planning.roi.height}"

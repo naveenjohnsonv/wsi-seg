@@ -16,12 +16,12 @@ from wsi_seg.prefetch import ReaderMetrics, SuperTilePrefetcher
 from wsi_seg.preview import save_previews
 from wsi_seg.scheduler import (
     PlanningSummary,
+    ScheduleROI,
     SuperTilePlan,
     group_patches_into_supertiles,
     plan_patch_grid,
-    schedule_roi,
 )
-from wsi_seg.slide import LevelSelection, OpenSlideReader, read_output_region
+from wsi_seg.slide import LevelSelection, OpenSlideReader, OutputFrame, read_output_region
 from wsi_seg.tissue import build_coarse_tissue_mask
 from wsi_seg.utils import (
     dump_json,
@@ -136,8 +136,11 @@ def _write_patch(
 
 def plan_run(
     cfg: AppConfig, slide: OpenSlideReader
-) -> tuple[int, int, PlanningSummary, list[SuperTilePlan], np.ndarray | None]:
-    out_w, out_h, roi = schedule_roi(slide, cfg.model.target_mpp, cfg.schedule.use_bounds)
+) -> tuple[OutputFrame, PlanningSummary, list[SuperTilePlan], np.ndarray | None]:
+    frame = slide.output_frame(cfg.model.target_mpp, cfg.schedule.use_bounds)
+    out_w = frame.out_w
+    out_h = frame.out_h
+    roi = ScheduleROI(0, 0, out_w, out_h)
     coarse_mask = None
     coarse_mask_array = None
     if cfg.schedule.use_tissue_mask:
@@ -158,6 +161,8 @@ def plan_run(
         roi=roi,
         coarse_mask=coarse_mask,
         min_tissue_fraction=cfg.schedule.tissue_mask_min_fraction,
+        frame=frame,
+        slide=slide,
     )
     supertiles = group_patches_into_supertiles(
         patch_metas,
@@ -165,7 +170,7 @@ def plan_run(
         patch_px=cfg.model.patch_px,
     )
     planning.supertiles = len(supertiles)
-    return out_w, out_h, planning, supertiles, coarse_mask_array
+    return frame, planning, supertiles, coarse_mask_array
 
 
 def _resolve_run_dir(cfg: AppConfig) -> tuple[str, Path]:
@@ -227,12 +232,16 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
 
     try:
         t0 = time.perf_counter()
-        out_w, out_h, planning, supertiles, coarse_mask = plan_run(cfg, slide)
+        frame, planning, supertiles, coarse_mask = plan_run(cfg, slide)
+        out_w = frame.out_w
+        out_h = frame.out_h
         wall.plan_and_mask = time.perf_counter() - t0
         run_logger.event(
             "planning_complete",
-            output_width=out_w,
-            output_height=out_h,
+            output_width=frame.out_w,
+            output_height=frame.out_h,
+            output_origin_x_level0=frame.origin_x_level0,
+            output_origin_y_level0=frame.origin_y_level0,
             roi=planning.roi,
             total_grid_patches=planning.total_grid_patches,
             roi_patches=planning.roi_patches,
@@ -264,7 +273,7 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
             with SuperTilePrefetcher(
                 slide_path=cfg.paths.slide_path,
                 selection=selection,
-                target_mpp=cfg.model.target_mpp,
+                frame=frame,
                 plans=supertiles,
                 openslide_cache_bytes=cfg.runtime.openslide_cache_bytes,
                 queue_size=cfg.runtime.prefetch_queue_size,
@@ -293,6 +302,7 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
                 model,
                 slide,
                 selection,
+                frame,
                 supertiles,
                 cfg,
                 device,
@@ -311,8 +321,8 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
 
         if exports_requested(cfg):
             t0 = time.perf_counter()
-            actual_output_mpp_x = (slide.metadata.width * slide.metadata.mpp_x) / max(out_w, 1)
-            actual_output_mpp_y = (slide.metadata.height * slide.metadata.mpp_y) / max(out_h, 1)
+            actual_output_mpp_x = frame.actual_output_mpp_x
+            actual_output_mpp_y = frame.actual_output_mpp_y
             if needs_materialized_export_mask(cfg):
                 mask *= np.uint8(255)
                 mask.flush()
@@ -331,6 +341,7 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
                         "target_mpp": cfg.model.target_mpp,
                         "actual_output_mpp_x": actual_output_mpp_x,
                         "actual_output_mpp_y": actual_output_mpp_y,
+                        "output_frame": asdict(frame),
                         "roi": asdict(planning.roi),
                     },
                 )
@@ -352,6 +363,7 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
                     run_dir,
                     max_size=cfg.output.preview_max_size,
                     tissue_mask=coarse_mask,
+                    frame=frame,
                 )
             wall.export_outputs = time.perf_counter() - t0
             run_logger.event(
@@ -380,7 +392,8 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
                 "git": git_info(),
                 "slide": asdict(slide.metadata),
                 "selection": asdict(selection),
-                "output_shape": {"width": out_w, "height": out_h},
+                "output_shape": {"width": frame.out_w, "height": frame.out_h},
+                "output_frame": asdict(frame),
                 "planning": {
                     "roi": asdict(planning.roi),
                     "total_grid_patches": gp,
@@ -433,8 +446,12 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
                 },
                 "config": cfg.model_dump(),
                 "coordinate_mapping": {
-                    "level0_x_from_mask_x": "x_l0 = x_mask * target_mpp / mpp_x",
-                    "level0_y_from_mask_y": "y_l0 = y_mask * target_mpp / mpp_y",
+                    "level0_x_from_mask_x": (
+                        "x_l0 = output_origin_x_level0 + x_mask * actual_output_mpp_x / base_mpp_x"
+                    ),
+                    "level0_y_from_mask_y": (
+                        "y_l0 = output_origin_y_level0 + y_mask * actual_output_mpp_y / base_mpp_y"
+                    ),
                 },
             },
             run_json_path,
@@ -470,7 +487,7 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
     return RunSummary(
         run_id=run_id,
         slide_path=cfg.paths.slide_path,
-        output_shape=(out_h, out_w),
+        output_shape=(frame.out_h, frame.out_w),
         device=str(device),
         wall_timing=wall,
         component_timing=components,
@@ -518,6 +535,7 @@ def _process_serial_supertiles(
     model: torch.jit.ScriptModule,
     slide: OpenSlideReader,
     selection: LevelSelection,
+    frame: OutputFrame,
     supertiles: list[SuperTilePlan],
     cfg: AppConfig,
     device: torch.device,
@@ -534,11 +552,11 @@ def _process_serial_supertiles(
         super_arr = read_output_region(
             slide,
             selection,
+            frame=frame,
             out_x=plan.out_x,
             out_y=plan.out_y,
             out_w=plan.out_w,
             out_h=plan.out_h,
-            target_mpp=cfg.model.target_mpp,
         )
         dt = time.perf_counter() - t0
         reader_metrics.active_seconds += dt

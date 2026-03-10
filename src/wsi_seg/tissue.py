@@ -22,19 +22,7 @@ class CoarseTissueMask:
         h, w = mask_u8.shape
         return cls(mask=mask_u8, integral=integral, thumb_w=w, thumb_h=h)
 
-    def region_fraction(
-        self,
-        x1: int,
-        y1: int,
-        x2: int,
-        y2: int,
-        out_w: int,
-        out_h: int,
-    ) -> float:
-        tx1 = int(np.floor(x1 * self.thumb_w / out_w))
-        ty1 = int(np.floor(y1 * self.thumb_h / out_h))
-        tx2 = int(np.ceil(x2 * self.thumb_w / out_w))
-        ty2 = int(np.ceil(y2 * self.thumb_h / out_h))
+    def _fraction_from_thumb_bounds(self, tx1: int, ty1: int, tx2: int, ty2: int) -> float:
         tx1 = int(np.clip(tx1, 0, self.thumb_w))
         ty1 = int(np.clip(ty1, 0, self.thumb_h))
         tx2 = int(np.clip(tx2, 0, self.thumb_w))
@@ -49,6 +37,37 @@ class CoarseTissueMask:
         )
         area = float((tx2 - tx1) * (ty2 - ty1))
         return float(total) / area if area > 0 else 0.0
+
+    def region_fraction(
+        self,
+        x1: int,
+        y1: int,
+        x2: int,
+        y2: int,
+        out_w: int,
+        out_h: int,
+    ) -> float:
+        tx1 = int(np.floor(x1 * self.thumb_w / out_w))
+        ty1 = int(np.floor(y1 * self.thumb_h / out_h))
+        tx2 = int(np.ceil(x2 * self.thumb_w / out_w))
+        ty2 = int(np.ceil(y2 * self.thumb_h / out_h))
+        return self._fraction_from_thumb_bounds(tx1, ty1, tx2, ty2)
+
+    def region_fraction_level0(
+        self,
+        x1: int,
+        y1: int,
+        x2: int,
+        y2: int,
+        *,
+        slide_width_level0: int,
+        slide_height_level0: int,
+    ) -> float:
+        tx1 = int(np.floor(x1 * self.thumb_w / slide_width_level0))
+        ty1 = int(np.floor(y1 * self.thumb_h / slide_height_level0))
+        tx2 = int(np.ceil(x2 * self.thumb_w / slide_width_level0))
+        ty2 = int(np.ceil(y2 * self.thumb_h / slide_height_level0))
+        return self._fraction_from_thumb_bounds(tx1, ty1, tx2, ty2)
 
 
 def otsu_threshold(gray: np.ndarray) -> int:

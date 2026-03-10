@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 
 from wsi_seg.scheduler import SuperTilePlan
-from wsi_seg.slide import LevelSelection, OpenSlideReader, read_output_region
+from wsi_seg.slide import LevelSelection, OpenSlideReader, OutputFrame, read_output_region
 
 
 @dataclass(slots=True)
@@ -39,7 +39,7 @@ class SuperTilePrefetcher:
         *,
         slide_path: str | Path,
         selection: LevelSelection,
-        target_mpp: float,
+        frame: OutputFrame,
         plans: Sequence[SuperTilePlan],
         openslide_cache_bytes: int,
         queue_size: int = 2,
@@ -48,7 +48,7 @@ class SuperTilePrefetcher:
     ) -> None:
         self.slide_path = Path(slide_path)
         self.selection = selection
-        self.target_mpp = target_mpp
+        self.frame = frame
         self.plans = list(plans)
         self.openslide_cache_bytes = openslide_cache_bytes
         self.queue_size = queue_size
@@ -97,11 +97,11 @@ class SuperTilePrefetcher:
                     image = read_output_region(
                         slide,
                         self.selection,
+                        frame=self.frame,
                         out_x=plan.out_x,
                         out_y=plan.out_y,
                         out_w=plan.out_w,
                         out_h=plan.out_h,
-                        target_mpp=self.target_mpp,
                     )
                     active_dt = time.perf_counter() - t0
                     with self._lock:
