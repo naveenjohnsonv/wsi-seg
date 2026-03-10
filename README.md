@@ -1,243 +1,266 @@
+
+
+
+
 # WSI Segmentation Pipeline
 
-A production-style whole-slide image (WSI) lesion-segmentation inference pipeline built on **OpenSlide** and **PyTorch**.
+Memory-efficient whole-slide inference pipeline for binary lesion masking on gigapixel pathology slides.
 
-It is designed around the constraints of digital pathology:
+---
 
-- **massive** multi-resolution whole-slide images
-- model inputs defined in **physical resolution** (`target_mpp`), not just nominal magnification
-- **bounded memory** via disk-backed intermediate outputs
-- **I/O-aware scheduling** through bounds-aware planning, conservative coarse tissue masking, and supertile reads
+## Overview
 
-## Current implemented phases
+Whole-slide images (WSIs) are multi-resolution pathology scans that can be hundreds of thousands of pixels wide and tall. Running a segmentation model on them requires more than just model execution - it demands careful management of pyramid level selection, I/O scheduling, patch stitching, and memory.
 
-### Phase 0 — project scaffold
-- CLI (`inspect`, `probe-model`, `run`)
-- YAML config with validation
-- Docker / `uv` / CI / tests
+This pipeline runs a pre-trained TorchScript model that expects **512×512 RGB patches at 0.88 µm/px**, normalized to `[0, 1]`, and returns per-pixel binary segmentation scores. It keeps memory bounded, makes I/O choices explicit, and produces viewer-friendly outputs (pyramidal OME-TIFF masks, preview overlays, and structured run manifests).
 
-### Phase 1 — correctness baseline
-- OpenSlide-based MIRAX/MRXS reader
-- robust metadata inspection
-- target-MPP-aware level selection
-- TorchScript model probing
-- overlap + center-crop stitching
-- memmap-backed mask writing
-- TIFF export + preview overlay + `run.json`
+---
 
-### Phase 2 — first performance pass
-- **bounds-aware scheduling** in output space
-- **coarse tissue mask** built from a thumbnail to skip obvious background
-- **supertile-based reading** instead of per-patch `read_region()`
-- richer planning and throughput stats in `inspect` and `run`
+## Architecture
 
-### Phase 3 — run history and observability
-- **per-run output directories**: `outputs/<slide_stem>/<run_id>/`
-- **run ID** format: `<UTC timestamp>_<git-sha7>_<config-hash8>`
-- **wall + component timing**: open slide, plan+mask, load model, processing loop, export; reader active/wait, model infer, writeback
-- **three throughput tiers**: grid/ROI/candidate patches per second
-- **planning fractions**: ROI area fraction, candidate fraction of ROI and grid
-- **batch stats**: number of batches, mean batch fill
-- **git traceability**: commit SHA, branch, dirty flag in `run.json`
+```text
+MRXS WSI
+  → inspect metadata (MPP, levels, bounds)
+  → choose nearest pyramid level to target MPP
+  → build conservative coarse tissue mask from thumbnail
+  → schedule candidate output-space patches inside bounds/tissue
+  → group patches into supertiles
+  → read one supertile at a time from OpenSlide
+  → resize once to exact target MPP
+  → split into overlapping 512×512 patches
+  → batched TorchScript inference
+  → overlap + center-crop stitching
+  → disk-backed mask writer (numpy memmap)
+  → export OME-TIFF + previews + run manifest
+```
 
-### Phase 4 — unified CLI
-- **single `run` command** replaces `run`, `run-many`, and `benchmark`
-- `--slide-path` accepts a file (single slide) or directory (batch); defaults to `data/slides`
-- `--recursive` recurses into directories for slide discovery
-- `--verbose` enables structured event logging
-- `--no-exports` isolates core pipeline timing without TIFF/preview cost
-- **intermediate memmaps are discarded by default**; `--keep-memmap` preserves them for debugging
-- **no paths in `default.yaml`** — sensible defaults live in code
+### Key Design Decisions
 
-### Phase 5 — async prefetch, OME-TIFF pyramid, structured logging
-- **async supertile prefetch**: background reader thread with queue-based pipeline overlapping I/O and inference
-- **pyramidal OME-TIFF export** (`mask.ome.tif`): SubIFD pyramid levels, tiled BigTIFF, zlib compression, OME `PhysicalSizeX`/`PhysicalSizeY` metadata — QuPath-compatible
-- **OME-TIFF is the default output**; flat TIFF (`mask.tif`) disabled by default, kept as an optional processing artifact
-- **mask stored as 0/255** (not 0/1) for standalone viewing usability
-- **lazy pyramid generation**: levels are computed and written one at a time, not materialized as a list, keeping peak memory bounded
-- **in-place memmap scaling**: 0→255 scaling happens on the memmap without allocating a full copy
-- **structured run logger**: `events.jsonl` with timestamped events throughout the pipeline
-- **multi-source MPP extraction**: openslide properties, Aperio keys, text description, TIFF resolution tags, objective power estimation
-- **multi-format slide discovery**: `.mrxs`, `.svs`, `.ndpi`, `.tif`, `.tiff`, `.scn`, `.bif`, `.vms`, `.vmu`
+**Physical-scale policy.** The target MPP (0.88 µm/px) is authoritative. The pipeline selects the pyramid level with the nearest MPP, then applies a single resize to match exactly. `mpp_x` and `mpp_y` are tracked independently. This reduces decode volume versus always reading level 0.
 
-## Chosen architecture
+**I/O scheduling.** Slide bounds and a conservative thumbnail-level tissue mask prune obvious background. Candidate patches are grouped into output-space **supertiles** (default 4096 px) so that OpenSlide reads are large and spatially local rather than thousands of tiny random accesses. An optional prefetch thread overlaps reads with inference.
 
-- backend: **OpenSlide**
-- scale policy: **target MPP is authoritative**
-- read level: **nearest level by MPP error, then resize once**
-- schedule ROI: **slide bounds projected to output space**
-- pruning: **conservative coarse tissue mask**
-- read granularity: **supertile reads**
-- stitching: **overlap + center-crop writeback**
-- intermediate storage: **NumPy memmap**
-- final outputs: **pyramidal OME-TIFF + previews + run manifest**
+**Stitching.** Patches are inferred with overlap (stride 384, halo 64). Only the valid center region of each patch is written back, eliminating most border artifacts without needing a full-resolution float accumulator.
 
-## Repo layout
+**Storage.** The intermediate mask is written to a `numpy.memmap` on disk, bounding peak RAM regardless of slide size. The final artifact is a pyramidal OME-TIFF for review in standard image tools.
+
+**Backend.** OpenSlide is used for MRXS/MIRAX reading for its maturity and reliability with this format.
+
+### Scaling Vision
+
+The current architecture is designed with a clear path to production scale. Supertile-based scheduling and the memmap intermediate naturally extend to **Zarr chunked storage** for cloud-native random writes. The prefetch thread can be replaced by a **multi-worker DataLoader** pattern for higher GPU utilization. The per-slide pipeline is stateless, making **distributed multi-slide execution** straightforward (e.g., one slide per worker in a task queue). Additional planned improvements include Gaussian blending / importance-map merging for smoother probability maps, bounds-cropped output mode to reduce artifact size, and upstream artifact/QC masking before lesion inference.
+
+---
+
+## Repository Layout
 
 ```text
 .
-├── .github/
-│   └── workflows/
-│       └── ci.yml
 ├── configs/
 │   └── default.yaml
-├── src/
-│   └── wsi_seg/
-│       ├── __init__.py
-│       ├── cli.py
-│       ├── config.py
-│       ├── geometry.py
-│       ├── logging_utils.py
-│       ├── model.py
-│       ├── pipeline.py
-│       ├── prefetch.py
-│       ├── preview.py
-│       ├── scheduler.py
-│       ├── slide.py
-│       ├── tissue.py
-│       ├── utils.py
-│       └── writer.py
+├── src/wsi_seg/
+│   ├── cli.py
+│   ├── config.py
+│   ├── geometry.py
+│   ├── logging_utils.py
+│   ├── model.py
+│   ├── pipeline.py
+│   ├── prefetch.py
+│   ├── preview.py
+│   ├── scheduler.py
+│   ├── slide.py
+│   ├── tissue.py
+│   ├── utils.py
+│   └── writer.py
 ├── tests/
-│   ├── test_config.py
-│   ├── test_pipeline_math.py
-│   ├── test_scheduler.py
-│   ├── test_slide_metadata.py
-│   ├── test_utils.py
-│   └── test_writer.py
-├── .gitignore
 ├── Dockerfile
 ├── pyproject.toml
 └── README.md
 ```
 
-## Install
+---
 
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/), then sync with the extra that matches your device:
+## Setup
+
+### Local with `uv`
 
 ```bash
-uv sync --extra xpu   --group dev   # Intel Arc / Xe
-uv sync --extra cu128 --group dev   # NVIDIA CUDA 12.8
-uv sync --extra rocm  --group dev   # AMD ROCm 6.4
-uv sync --extra cpu   --group dev   # CPU only / CI
+uv sync --extra cpu --group dev
 ```
 
-Docker builds install the **CPU** extra by default so the image is reproducible without GPU-specific wheels.
+Other supported extras in `pyproject.toml`:
 
-## Data layout
+```bash
+uv sync --extra cu128 --group dev   # CUDA 12.8
+uv sync --extra xpu --group dev     # Intel XPU
+uv sync --extra rocm --group dev    # AMD ROCm
+```
+
+### Docker
+
+```bash
+docker build -t wsi-seg .
+```
+
+The Docker image installs the **CPU** extra by default for reproducibility.
+
+### Data Layout
+
+Place the model and slides as follows:
 
 ```text
 data/
 ├── model_scripted.pt
 └── slides/
     ├── MJUL22785295_001.mrxs
-    └── MJUL22785295_001/
+    ├── MJUL22785295_001/
+    ├── MKQD63856403_001.mrxs
+    ├── MKQD63856403_001/
+    ├── QOFN21275156_001.mrxs
+    └── QOFN21275156_001/
 ```
 
-## Commands
+---
 
-Run all slides in `data/slides/` with defaults:
+## Usage
 
-```bash
-uv run wsi-seg run
-```
-
-Run a single slide:
+### Inspect a slide
 
 ```bash
-uv run wsi-seg run --slide-path data/slides/MJUL22785295_001.mrxs
-```
-
-Run all slides in a specific directory:
-
-```bash
-uv run wsi-seg run --slide-path data/slides
-```
-
-Recursively discover slides in nested directories:
-
-```bash
-uv run wsi-seg run --slide-path data/slides --recursive
-```
-
-Isolate core pipeline timing (skip TIFF and preview exports):
-
-```bash
-uv run wsi-seg run --no-exports
-```
-
-Enable structured event logging:
-
-```bash
-uv run wsi-seg run --verbose
-```
-
-Preserve the intermediate memmap for debugging:
-
-```bash
-uv run wsi-seg run --keep-memmap
-```
-
-Override model or output directory:
-
-```bash
-uv run wsi-seg run --model-path data/other_model.pt --output-dir results
-```
-
-Inspect slide metadata and planning:
-
-```bash
-uv run wsi-seg inspect
 uv run wsi-seg inspect --slide-path data/slides/MJUL22785295_001.mrxs
 ```
 
-Probe TorchScript model:
+Prints vendor, level pyramid, level-0 MPP, chosen inference level, output mask size, bounds-aware ROI, and candidate patch/supertile counts.
+
+### Probe the TorchScript model
 
 ```bash
-uv run wsi-seg probe-model
+uv run wsi-seg probe-model --model-path data/model_scripted.pt
 ```
 
-When multiple slides are processed, a batch summary CSV/JSON is written under `outputs/_batches/`.
+### Run inference
+
+```bash
+# Single slide
+uv run wsi-seg run --slide-path data/slides/MJUL22785295_001.mrxs
+
+# All slides in a directory
+uv run wsi-seg run --slide-path data/slides
+
+# Recursive directory search
+uv run wsi-seg run --slide-path data/slides --recursive
+
+# Skip export artifacts (isolate core pipeline timing)
+uv run wsi-seg run --slide-path data/slides/QOFN21275156_001.mrxs --no-exports
+```
+
+---
+
+## Configuration
+
+Main knobs are exposed in `configs/default.yaml`:
+
+```yaml
+model:
+  target_mpp: 0.88
+  patch_px: 512
+  stride_px: 384
+  halo_px: 64
+  batch_size: 8
+  threshold: 0.5
+
+runtime:
+  device: auto
+  use_amp: true
+  openslide_cache_bytes: 536870912
+  prefetch_supertiles: true
+  prefetch_queue_size: 2
+
+schedule:
+  use_bounds: true
+  use_tissue_mask: true
+  tissue_mask_min_fraction: 0.03
+  supertile_px: 4096
+
+output:
+  write_ome_tiff: true
+  write_tiff: false
+  write_previews: true
+  keep_memmap: false
+```
+
+---
 
 ## Outputs
 
-Each run creates its own directory under `outputs/<slide_stem>/<run_id>/`:
+Each run writes to `outputs/<slide_stem>/<run_id>/`:
 
 ```text
-outputs/
-└── MJUL22785295_001/
-    └── 20260308T131422Z_4c16605_cfg9a21f3/
-        ├── mask.ome.tif          # pyramidal OME-TIFF (QuPath-compatible)
-        ├── events.jsonl          # structured run events with timestamps
-        ├── preview_mask.png
-        ├── preview_overlay.png
-        ├── preview_tissue.png    # coarse tissue mask used for scheduling
-        └── run.json
+mask.ome.tif          # pyramidal binary mask
+preview_mask.png      # binary preview of final prediction
+preview_overlay.png   # slide thumbnail + green predicted mask
+preview_tissue.png    # coarse tissue mask used for scheduling
+events.jsonl          # structured run events
+run.json              # manifest with metadata, timings, config, and planning stats
 ```
 
-The `run_id` is `<UTC timestamp>_<git-sha7>_<config-hash8>`, giving full traceability.
-By default the temporary memmap is removed after the run; use `--keep-memmap` when you want to inspect it.
-When `write_tiff: true` is set in config, a flat `mask.tif` is also written (off by default).
+`run.json` includes slide metadata and bounds, chosen level and output shape, planning statistics, timing breakdown, throughput metrics, config snapshot, and coordinate mapping back to level-0 pixels.
 
-`run.json` includes:
-- `run_id`, `started_at_utc`, `finished_at_utc`
-- `git` block: commit SHA, branch, dirty flag
-- slide metadata (including MPP source) and chosen level
-- planning statistics with area fractions and batch stats
-- wall timing + component timing breakdown with overlap semantics
-- three throughput tiers: grid / ROI / candidate patches per second
-- config used for the run
-- coordinate mapping notes back to level-0 pixels
+---
 
-Batch runs write their aggregate reports under `outputs/_batches/<batch_id>/`.
+## Visual Results
 
-## Current limitations
+<!-- Add result images under docs/results/ and replace the inline code below with actual Markdown image tags. -->
 
-- It uses a coarse, conservative tissue mask heuristic rather than a learned tissue segmenter.
-- Pyramid downsampling uses nearest-neighbor subsampling (`[::2, ::2]`), which is correct for binary masks but would need interpolation for probability maps.
+```text
+docs/
+└── results/
+    ├── MJUL22785295_001_thumb.png
+    ├── MJUL22785295_001_tissue.png
+    ├── MJUL22785295_001_mask.png
+    ├── MJUL22785295_001_overlay.png
+    ├── MKQD63856403_001_thumb.png
+    ├── MKQD63856403_001_tissue.png
+    ├── MKQD63856403_001_mask.png
+    ├── MKQD63856403_001_overlay.png
+    ├── QOFN21275156_001_thumb.png
+    ├── QOFN21275156_001_tissue.png
+    ├── QOFN21275156_001_mask.png
+    └── QOFN21275156_001_overlay.png
+```
 
-## Suggested next steps
+| Slide | Tissue mask | Binary mask | Overlay |
+|---|---|---|---|
+| MJUL22785295_001 | `![MJUL tissue](docs/results/MJUL22785295_001_tissue.png)` | `![MJUL mask](docs/results/MJUL22785295_001_mask.png)` | `![MJUL overlay](docs/results/MJUL22785295_001_overlay.png)` |
+| MKQD63856403_001 | `![MKQD tissue](docs/results/MKQD63856403_001_tissue.png)` | `![MKQD mask](docs/results/MKQD63856403_001_mask.png)` | `![MKQD overlay](docs/results/MKQD63856403_001_overlay.png)` |
+| QOFN21275156_001 | `![QOFN tissue](docs/results/QOFN21275156_001_tissue.png)` | `![QOFN mask](docs/results/QOFN21275156_001_mask.png)` | `![QOFN overlay](docs/results/QOFN21275156_001_overlay.png)` |
 
-1. visually verify tissue masks across all three slides
-2. add optional bounds-cropped intermediate/output mode
-3. add manual GitHub Actions smoke test for a real slide
-4. add probability blending / gaussian weighting as an optional stitcher
+> Replace the inline code above with actual Markdown image tags once the assets are committed.
+
+---
+
+## Performance
+
+Comparison between earlier end-to-end runs and the current architecture (both with preview and OME-TIFF export enabled):
+
+| Slide | End-to-end wall time | Core processing time | Candidate patches/sec |
+|---|---:|---:|---:|
+| MJUL22785295_001 | 88.2 s → 69.4 s (**−21.3%**) | 57.6 s → 40.3 s (**−30.1%**) | 11.0 → 13.9 (**+27.0%**) |
+| MKQD63856403_001 | 179.2 s → 117.5 s (**−34.4%**) | 145.4 s → 88.2 s (**−39.3%**) | 16.2 → 24.6 (**+52.4%**) |
+| QOFN21275156_001 | 71.5 s → 48.7 s (**−31.9%**) | 40.9 s → 20.0 s (**−51.1%**) | 8.7 → 12.8 (**+46.9%**) |
+
+On average: **~29%** faster end-to-end, **~40%** faster core processing, and **~42%** higher patch throughput. The gains come primarily from bounded prefetch between read and infer stages, supertile-based reads improving locality, and reduced critical-path reader stalls.
+
+---
+
+## Testing
+
+The test suite includes config validation tests, slide metadata extraction tests, scheduling and crop-geometry tests, and writer tests for TIFF/OME-TIFF metadata.
+
+---
+
+## Trade-offs and Known Limitations
+
+**Chosen trade-offs.** OpenSlide was selected over more experimental readers for MRXS reliability. Center-crop stitching was chosen over weighted probability blending for simpler bounded-memory writeback. A numpy memmap intermediate was preferred over Zarr for lower implementation risk. The optional single prefetch thread was favored over a more complex multi-worker DataLoader design.
+
+**Known limitations.** The coarse tissue mask is heuristic and conservative by design - it may include some background regions but avoids missing tissue. Current CI uses synthetic tests rather than full real-slide runs.
