@@ -182,7 +182,7 @@ def _resolve_run_dir(cfg: AppConfig) -> tuple[str, Path]:
 
 
 
-def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
+def run_pipeline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
     run_id, run_dir = _resolve_run_dir(cfg)
     run_logger = StructuredRunLogger(run_dir, verbose=verbose)
     started_at = utc_now_iso()

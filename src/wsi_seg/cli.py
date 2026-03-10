@@ -11,7 +11,7 @@ from rich.table import Table
 from wsi_seg.config import AppConfig
 from wsi_seg.logging_utils import configure_logging
 from wsi_seg.model import probe_model
-from wsi_seg.pipeline import RunSummary, plan_run, run_baseline
+from wsi_seg.pipeline import RunSummary, plan_run, run_pipeline
 from wsi_seg.slide import OpenSlideReader
 from wsi_seg.utils import (
     SUPPORTED_SLIDE_SUFFIXES,
@@ -236,7 +236,7 @@ def _print_run_summary(summary: RunSummary) -> None:
     console.print(wall_table)
 
     comp = s.component_timing
-    comp_table = Table(title="Component timing (clean overlap semantics)")
+    comp_table = Table(title="Component timing")
     comp_table.add_column("Metric")
     comp_table.add_column("Seconds", justify="right")
     comp_table.add_row("Reader active", f"{comp.reader_active:.3f}")
@@ -385,7 +385,7 @@ def run_cmd(
     summaries: list[RunSummary] = []
     for sp in slides:
         slide_cfg = _cfg_with_slide(cfg, sp)
-        summary = run_baseline(slide_cfg, verbose=verbose)
+        summary = run_pipeline(slide_cfg, verbose=verbose)
         summaries.append(summary)
         _print_run_summary(summary)
 
