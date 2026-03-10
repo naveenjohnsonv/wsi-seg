@@ -1,33 +1,34 @@
-# Results Placeholders
+# Results
 
-Add result images under `docs/results/` and replace the inline code blocks below with real Markdown image tags when assets are committed.
+The images below show the latest segmentation results for four slides.
 
-## Suggested directory layout
+## Available result files
 
 ```text
 docs/
 └── results/
-    ├── slide_1_thumb.png
-    ├── slide_1_tissue.png
-    ├── slide_1_mask.png
-    ├── slide_1_overlay.png
-    ├── slide_2_thumb.png
-    ├── slide_2_tissue.png
-    ├── slide_2_mask.png
-    ├── slide_2_overlay.png
-    ├── slide_3_thumb.png
-    ├── slide_3_tissue.png
-    ├── slide_3_mask.png
-    └── slide_3_overlay.png
+    ├── KLMP45690052_001_tissue.png
+    ├── KLMP45690052_001_mask.png
+    ├── KLMP45690052_001_overlay.png
+    ├── MJUL22785295_001_tissue.png
+    ├── MJUL22785295_001_mask.png
+    ├── MJUL22785295_001_overlay.png
+    ├── MKQD63856403_001_tissue.png
+    ├── MKQD63856403_001_mask.png
+    ├── MKQD63856403_001_overlay.png
+    ├── QOFN21275156_001_tissue.png
+    ├── QOFN21275156_001_mask.png
+    └── QOFN21275156_001_overlay.png
 ```
 
-## Placeholder table
+## Results table
 
-| Slide | Tissue mask | Binary mask | Overlay |
+| Slide ID | Tissue mask | Binary mask | Overlay |
 |---|---|---|---|
-| slide_1 | `![slide_1 tissue](docs/results/slide_1_tissue.png)` | `![slide_1 mask](docs/results/slide_1_mask.png)` | `![slide_1 overlay](docs/results/slide_1_overlay.png)` |
-| slide_2 | `![slide_2 tissue](docs/results/slide_2_tissue.png)` | `![slide_2 mask](docs/results/slide_2_mask.png)` | `![slide_2 overlay](docs/results/slide_2_overlay.png)` |
-| slide_3 | `![slide_3 tissue](docs/results/slide_3_tissue.png)` | `![slide_3 mask](docs/results/slide_3_mask.png)` | `![slide_3 overlay](docs/results/slide_3_overlay.png)` |
+| KLMP45690052_001 | ![KLMP45690052_001 tissue](results/KLMP45690052_001_tissue.png) | ![KLMP45690052_001 mask](results/KLMP45690052_001_mask.png) | ![KLMP45690052_001 overlay](results/KLMP45690052_001_overlay.png) |
+| MJUL22785295_001 | ![MJUL22785295_001 tissue](results/MJUL22785295_001_tissue.png) | ![MJUL22785295_001 mask](results/MJUL22785295_001_mask.png) | ![MJUL22785295_001 overlay](results/MJUL22785295_001_overlay.png) |
+| MKQD63856403_001 | ![MKQD63856403_001 tissue](results/MKQD63856403_001_tissue.png) | ![MKQD63856403_001 mask](results/MKQD63856403_001_mask.png) | ![MKQD63856403_001 overlay](results/MKQD63856403_001_overlay.png) |
+| QOFN21275156_001 | ![QOFN21275156_001 tissue](results/QOFN21275156_001_tissue.png) | ![QOFN21275156_001 mask](results/QOFN21275156_001_mask.png) | ![QOFN21275156_001 overlay](results/QOFN21275156_001_overlay.png) |
 
 ## What the artifacts mean
 

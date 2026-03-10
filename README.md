@@ -165,4 +165,4 @@ The current structure cleanly separates slide reading, scheduling, inference, an
 
 - [Architecture notes](docs/ARCHITECTURE.md)
 - [Running notes](docs/RUNNING.md)
-- [Results placeholders](docs/RESULTS.md)
+- [Results](docs/RESULTS.md)
