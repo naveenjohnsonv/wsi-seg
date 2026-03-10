@@ -1,0 +1,14 @@
+{"ts": "2026-03-10T13:40:49.510784+00:00", "event": "slide_opened", "slide_path": "/home/naveen/wsi-seg/data/slides/MKQD63856403_001.mrxs", "vendor": "mirax", "backend": "OpenSlide", "detected_format": null, "cache_enabled": true, "mpp_source": "openslide.mpp-x/y", "chosen_level": 1, "chosen_level_policy": "prefer_higher_bounded", "chosen_level_mpp_x": 0.485069444444444, "chosen_level_mpp_y": 0.485294117647058, "resize_factor_x": 1.8141732283464584, "resize_factor_y": 1.8133333333333366}
+{"ts": "2026-03-10T13:40:49.997750+00:00", "event": "planning_complete", "output_width": 26035, "output_height": 51459, "output_origin_x_level0": 16640, "output_origin_y_level0": 22528, "roi": {"x": 0, "y": 0, "width": 26035, "height": 51459}, "total_grid_patches": 9112, "roi_patches": 9112, "candidate_patches": 2889, "supertiles": 49}
+{"ts": "2026-03-10T13:40:51.400777+00:00", "event": "model_loaded", "model_path": "/home/naveen/wsi-seg/data/model_scripted.pt", "device": "xpu", "batch_size": 8, "use_amp": true}
+{"ts": "2026-03-10T13:40:51.401019+00:00", "event": "processing_started", "prefetch_enabled": true, "prefetch_queue_size": 6, "total_supertiles": 49}
+{"ts": "2026-03-10T13:40:53.275551+00:00", "event": "supertile_progress", "completed": 1, "total": 49}
+{"ts": "2026-03-10T13:41:14.562549+00:00", "event": "supertile_progress", "completed": 8, "total": 49}
+{"ts": "2026-03-10T13:41:32.887618+00:00", "event": "supertile_progress", "completed": 16, "total": 49}
+{"ts": "2026-03-10T13:41:46.909510+00:00", "event": "supertile_progress", "completed": 24, "total": 49}
+{"ts": "2026-03-10T13:42:17.584132+00:00", "event": "supertile_progress", "completed": 32, "total": 49}
+{"ts": "2026-03-10T13:42:49.761728+00:00", "event": "supertile_progress", "completed": 40, "total": 49}
+{"ts": "2026-03-10T13:43:07.704300+00:00", "event": "supertile_progress", "completed": 48, "total": 49}
+{"ts": "2026-03-10T13:43:07.787284+00:00", "event": "supertile_progress", "completed": 49, "total": 49}
+{"ts": "2026-03-10T13:43:12.732433+00:00", "event": "exports_complete", "mask_tiff": null, "mask_ome_tiff": "/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8/mask.ome.tif", "previews": {"preview_mask": "/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8/preview_mask.png", "preview_overlay": "/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8/preview_overlay.png", "preview_tissue": "/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8/preview_tissue.png"}}
+{"ts": "2026-03-10T13:43:12.738293+00:00", "event": "run_complete", "total_wall_seconds": 137.293853494004, "processing_wall_seconds": 130.33939688600367, "reader_active_seconds": 127.52403421497729, "reader_wait_seconds": 24.910569803978433, "infer_active_seconds": 96.76369213288126, "writeback_seconds": 0.8281145598593866}

@@ -10,7 +10,6 @@ __pycache__/
 venv/
 build/
 dist/
-outputs/
 data/
 *.tmp.npy
 *.patch

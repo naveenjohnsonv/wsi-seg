@@ -1,0 +1,45 @@
+{
+  "batch_id": "batch_20260310T134348Z_4e5e3cf_9a9d5cc8",
+  "num_slides": 3,
+  "slides": [
+    {
+      "slide_stem": "MJUL22785295_001",
+      "run_id": "20260310T133951Z_4e5e3cf_9a9d5cc8",
+      "device": "xpu",
+      "grid_patches": 9216,
+      "roi_patches": 9216,
+      "candidate_patches": 982,
+      "supertiles": 28,
+      "seconds": 53.685645,
+      "candidate_patches_per_second": 18.291668,
+      "run_dir": "/home/naveen/wsi-seg/outputs/MJUL22785295_001/20260310T133951Z_4e5e3cf_9a9d5cc8",
+      "run_json": "/home/naveen/wsi-seg/outputs/MJUL22785295_001/20260310T133951Z_4e5e3cf_9a9d5cc8/run.json"
+    },
+    {
+      "slide_stem": "MKQD63856403_001",
+      "run_id": "20260310T134049Z_4e5e3cf_9a9d5cc8",
+      "device": "xpu",
+      "grid_patches": 9112,
+      "roi_patches": 9112,
+      "candidate_patches": 2889,
+      "supertiles": 49,
+      "seconds": 137.293853,
+      "candidate_patches_per_second": 21.042457,
+      "run_dir": "/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8",
+      "run_json": "/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8/run.json"
+    },
+    {
+      "slide_stem": "QOFN21275156_001",
+      "run_id": "20260310T134312Z_4e5e3cf_9a9d5cc8",
+      "device": "xpu",
+      "grid_patches": 3696,
+      "roi_patches": 3696,
+      "candidate_patches": 622,
+      "supertiles": 15,
+      "seconds": 33.710103,
+      "candidate_patches_per_second": 18.451442,
+      "run_dir": "/home/naveen/wsi-seg/outputs/QOFN21275156_001/20260310T134312Z_4e5e3cf_9a9d5cc8",
+      "run_json": "/home/naveen/wsi-seg/outputs/QOFN21275156_001/20260310T134312Z_4e5e3cf_9a9d5cc8/run.json"
+    }
+  ]
+}

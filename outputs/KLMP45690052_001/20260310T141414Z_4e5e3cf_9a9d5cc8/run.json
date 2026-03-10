@@ -1,0 +1,187 @@
+{
+  "run_id": "20260310T141414Z_4e5e3cf_9a9d5cc8",
+  "started_at_utc": "20260310T141414Z",
+  "finished_at_utc": "20260310T141442Z",
+  "git": {
+    "git_commit": "4e5e3cf",
+    "git_branch": "main",
+    "git_dirty": false
+  },
+  "slide": {
+    "path": "/home/naveen/wsi-seg/data/slides/KLMP45690052_001.svs",
+    "vendor": "aperio",
+    "backend": "OpenSlide",
+    "detected_format": null,
+    "width": 64396,
+    "height": 46701,
+    "mpp_x": 0.26278,
+    "mpp_y": 0.26278,
+    "mpp_source": "openslide.mpp-x/y",
+    "objective_power": 40.0,
+    "levels": [
+      {
+        "index": 0,
+        "width": 64396,
+        "height": 46701,
+        "downsample": 1.0,
+        "mpp_x": 0.26278,
+        "mpp_y": 0.26278
+      },
+      {
+        "index": 1,
+        "width": 16099,
+        "height": 11675,
+        "downsample": 4.000042826552463,
+        "mpp_x": 1.0511312539614561,
+        "mpp_y": 1.0511312539614561
+      },
+      {
+        "index": 2,
+        "width": 4024,
+        "height": 2918,
+        "downsample": 16.003718606796507,
+        "mpp_x": 4.2054571754939865,
+        "mpp_y": 4.2054571754939865
+      }
+    ],
+    "bounds": null,
+    "background_hex": null
+  },
+  "selection": {
+    "level": 1,
+    "downsample": 4.000042826552463,
+    "level_mpp_x": 1.0511312539614561,
+    "level_mpp_y": 1.0511312539614561,
+    "error_x": 0.17113125396145612,
+    "error_y": 0.17113125396145612,
+    "policy": "prefer_higher_bounded",
+    "resize_factor_x": 0.8371932588660984,
+    "resize_factor_y": 0.8371932588660984
+  },
+  "output_shape": {
+    "width": 19230,
+    "height": 13946
+  },
+  "output_frame": {
+    "origin_x_level0": 0,
+    "origin_y_level0": 0,
+    "width_level0": 64396,
+    "height_level0": 46701,
+    "out_w": 19230,
+    "out_h": 13946,
+    "actual_output_mpp_x": 0.8799782048881954,
+    "actual_output_mpp_y": 0.8799719475118314
+  },
+  "planning": {
+    "roi": {
+      "x": 0,
+      "y": 0,
+      "width": 19230,
+      "height": 13946
+    },
+    "total_grid_patches": 1800,
+    "roi_patches": 1800,
+    "candidate_patches": 508,
+    "supertiles": 14,
+    "edge_patches": 0,
+    "padded_patches": 0,
+    "roi_area_fraction": 1.0,
+    "candidate_fraction_of_roi": 0.2822222222222222,
+    "candidate_fraction_of_grid": 0.2822222222222222,
+    "avg_candidates_per_supertile": 36.285714285714285,
+    "num_batches": 68,
+    "mean_batch_fill": 7.470588235294118
+  },
+  "device": "xpu",
+  "cache_enabled": true,
+  "prefetch": {
+    "enabled": true,
+    "queue_size": 6
+  },
+  "timing": {
+    "wall": {
+      "open_slide": 0.15235489199403673,
+      "plan_and_mask": 0.7119812689925311,
+      "load_model": 0.6686196759983432,
+      "processing_loop": 22.63995966600487,
+      "export_outputs": 1.6817569220002042,
+      "total": 25.91687162099697
+    },
+    "components": {
+      "reader_active": 6.8294147179840365,
+      "reader_wait": 0.1440516880393261,
+      "model_infer": 21.4315566419682,
+      "writeback": 0.10611125403374899
+    },
+    "semantics": {
+      "reader_active": "actual time spent reading/decoding/resizing supertiles; can overlap model inference when prefetch is enabled",
+      "reader_wait": "critical-path stall time where the main thread blocked waiting for the next supertile",
+      "model_infer": "actual model execution time on inference batches",
+      "writeback": "actual time spent thresholding and stitching predictions into the output mask",
+      "wall": "mutually exclusive wall-clock buckets; these add to total wall time"
+    }
+  },
+  "throughput": {
+    "grid_patches_per_second": 69.45282695854776,
+    "roi_patches_per_second": 69.45282695854776,
+    "candidate_patches_per_second": 19.601131163856813,
+    "candidate_patches_per_processing_second": 22.438202518655086
+  },
+  "config": {
+    "paths": {
+      "slide_path": "/home/naveen/wsi-seg/data/slides/KLMP45690052_001.svs",
+      "model_path": "/home/naveen/wsi-seg/data/model_scripted.pt",
+      "output_dir": "/home/naveen/wsi-seg/outputs"
+    },
+    "slide": {
+      "mpp_override_x": null,
+      "mpp_override_y": null
+    },
+    "model": {
+      "target_mpp": 0.88,
+      "patch_px": 512,
+      "stride_px": 384,
+      "halo_px": 64,
+      "batch_size": 8,
+      "threshold": 0.5,
+      "apply_sigmoid": true,
+      "level_selection_policy": "prefer_higher_bounded",
+      "max_native_oversample_factor": 2.0
+    },
+    "runtime": {
+      "device": "auto",
+      "use_amp": true,
+      "openslide_cache_bytes": 536870912,
+      "torch_num_threads": 1,
+      "prefetch_supertiles": true,
+      "prefetch_queue_size": 6,
+      "log_every_supertiles": 8
+    },
+    "output": {
+      "write_tiff": false,
+      "bigtiff": true,
+      "compression": "zlib",
+      "tiff_tile_size": 512,
+      "write_ome_tiff": true,
+      "ome_tile_size": 512,
+      "ome_pyramid_min_size": 512,
+      "write_previews": true,
+      "preview_max_size": 1536,
+      "keep_memmap": false
+    },
+    "schedule": {
+      "use_bounds": true,
+      "use_tissue_mask": true,
+      "tissue_mask_max_size": 1536,
+      "tissue_mask_min_fraction": 0.03,
+      "tissue_mask_saturation_threshold": 18,
+      "tissue_mask_white_threshold": 235,
+      "supertile_px": 4096
+    },
+    "future": {}
+  },
+  "coordinate_mapping": {
+    "level0_x_from_mask_x": "x_l0 = output_origin_x_level0 + x_mask * actual_output_mpp_x / base_mpp_x",
+    "level0_y_from_mask_y": "y_l0 = output_origin_y_level0 + y_mask * actual_output_mpp_y / base_mpp_y"
+  }
+}

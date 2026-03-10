@@ -1,0 +1,248 @@
+{
+  "run_id": "20260310T134049Z_4e5e3cf_9a9d5cc8",
+  "started_at_utc": "20260310T134049Z",
+  "finished_at_utc": "20260310T134312Z",
+  "git": {
+    "git_commit": "4e5e3cf",
+    "git_branch": "main",
+    "git_dirty": false
+  },
+  "slide": {
+    "path": "/home/naveen/wsi-seg/data/slides/MKQD63856403_001.mrxs",
+    "vendor": "mirax",
+    "backend": "OpenSlide",
+    "detected_format": null,
+    "width": 277504,
+    "height": 294144,
+    "mpp_x": 0.242534722222222,
+    "mpp_y": 0.242647058823529,
+    "mpp_source": "openslide.mpp-x/y",
+    "objective_power": 20.0,
+    "levels": [
+      {
+        "index": 0,
+        "width": 277504,
+        "height": 294144,
+        "downsample": 1.0,
+        "mpp_x": 0.242534722222222,
+        "mpp_y": 0.242647058823529
+      },
+      {
+        "index": 1,
+        "width": 138752,
+        "height": 147072,
+        "downsample": 2.0,
+        "mpp_x": 0.485069444444444,
+        "mpp_y": 0.485294117647058
+      },
+      {
+        "index": 2,
+        "width": 69376,
+        "height": 73536,
+        "downsample": 4.0,
+        "mpp_x": 0.970138888888888,
+        "mpp_y": 0.970588235294116
+      },
+      {
+        "index": 3,
+        "width": 34688,
+        "height": 36768,
+        "downsample": 8.0,
+        "mpp_x": 1.940277777777776,
+        "mpp_y": 1.941176470588232
+      },
+      {
+        "index": 4,
+        "width": 17344,
+        "height": 18384,
+        "downsample": 16.0,
+        "mpp_x": 3.880555555555552,
+        "mpp_y": 3.882352941176464
+      },
+      {
+        "index": 5,
+        "width": 8672,
+        "height": 9192,
+        "downsample": 32.0,
+        "mpp_x": 7.761111111111104,
+        "mpp_y": 7.764705882352928
+      },
+      {
+        "index": 6,
+        "width": 4336,
+        "height": 4596,
+        "downsample": 64.0,
+        "mpp_x": 15.522222222222208,
+        "mpp_y": 15.529411764705856
+      },
+      {
+        "index": 7,
+        "width": 2168,
+        "height": 2298,
+        "downsample": 128.0,
+        "mpp_x": 31.044444444444416,
+        "mpp_y": 31.05882352941171
+      },
+      {
+        "index": 8,
+        "width": 1084,
+        "height": 1149,
+        "downsample": 256.0,
+        "mpp_x": 62.08888888888883,
+        "mpp_y": 62.11764705882342
+      },
+      {
+        "index": 9,
+        "width": 542,
+        "height": 574,
+        "downsample": 512.0,
+        "mpp_x": 124.17777777777766,
+        "mpp_y": 124.23529411764684
+      }
+    ],
+    "bounds": {
+      "x": 16640,
+      "y": 22528,
+      "width": 94464,
+      "height": 186624
+    },
+    "background_hex": "FFFFFF"
+  },
+  "selection": {
+    "level": 1,
+    "downsample": 2.0,
+    "level_mpp_x": 0.485069444444444,
+    "level_mpp_y": 0.485294117647058,
+    "error_x": 0.394930555555556,
+    "error_y": 0.394705882352942,
+    "policy": "prefer_higher_bounded",
+    "resize_factor_x": 1.8141732283464584,
+    "resize_factor_y": 1.8133333333333366
+  },
+  "output_shape": {
+    "width": 26035,
+    "height": 51459
+  },
+  "output_frame": {
+    "origin_x_level0": 16640,
+    "origin_y_level0": 22528,
+    "width_level0": 94464,
+    "height_level0": 186624,
+    "out_w": 26035,
+    "out_h": 51459,
+    "actual_output_mpp_x": 0.8799999999999991,
+    "actual_output_mpp_y": 0.8799969821777003
+  },
+  "planning": {
+    "roi": {
+      "x": 0,
+      "y": 0,
+      "width": 26035,
+      "height": 51459
+    },
+    "total_grid_patches": 9112,
+    "roi_patches": 9112,
+    "candidate_patches": 2889,
+    "supertiles": 49,
+    "edge_patches": 1,
+    "padded_patches": 0,
+    "roi_area_fraction": 1.0,
+    "candidate_fraction_of_roi": 0.317054433713784,
+    "candidate_fraction_of_grid": 0.317054433713784,
+    "avg_candidates_per_supertile": 58.95918367346939,
+    "num_batches": 385,
+    "mean_batch_fill": 7.503896103896104
+  },
+  "device": "xpu",
+  "cache_enabled": true,
+  "prefetch": {
+    "enabled": true,
+    "queue_size": 6
+  },
+  "timing": {
+    "wall": {
+      "open_slide": 0.12501156800135504,
+      "plan_and_mask": 0.48668407600780483,
+      "load_model": 1.4027009589917725,
+      "processing_loop": 130.33939688600367,
+      "export_outputs": 4.7959363859990845,
+      "total": 137.293853494004
+    },
+    "components": {
+      "reader_active": 127.52403421497729,
+      "reader_wait": 24.910569803978433,
+      "model_infer": 96.76369213288126,
+      "writeback": 0.8281145598593866
+    },
+    "semantics": {
+      "reader_active": "actual time spent reading/decoding/resizing supertiles; can overlap model inference when prefetch is enabled",
+      "reader_wait": "critical-path stall time where the main thread blocked waiting for the next supertile",
+      "model_infer": "actual model execution time on inference batches",
+      "writeback": "actual time spent thresholding and stitching predictions into the output mask",
+      "wall": "mutually exclusive wall-clock buckets; these add to total wall time"
+    }
+  },
+  "throughput": {
+    "grid_patches_per_second": 66.36859384530237,
+    "roi_patches_per_second": 66.36859384530237,
+    "candidate_patches_per_second": 21.042456938002477,
+    "candidate_patches_per_processing_second": 22.165209207824958
+  },
+  "config": {
+    "paths": {
+      "slide_path": "/home/naveen/wsi-seg/data/slides/MKQD63856403_001.mrxs",
+      "model_path": "/home/naveen/wsi-seg/data/model_scripted.pt",
+      "output_dir": "/home/naveen/wsi-seg/outputs"
+    },
+    "slide": {
+      "mpp_override_x": null,
+      "mpp_override_y": null
+    },
+    "model": {
+      "target_mpp": 0.88,
+      "patch_px": 512,
+      "stride_px": 384,
+      "halo_px": 64,
+      "batch_size": 8,
+      "threshold": 0.5,
+      "apply_sigmoid": true,
+      "level_selection_policy": "prefer_higher_bounded",
+      "max_native_oversample_factor": 2.0
+    },
+    "runtime": {
+      "device": "auto",
+      "use_amp": true,
+      "openslide_cache_bytes": 536870912,
+      "torch_num_threads": 1,
+      "prefetch_supertiles": true,
+      "prefetch_queue_size": 6,
+      "log_every_supertiles": 8
+    },
+    "output": {
+      "write_tiff": false,
+      "bigtiff": true,
+      "compression": "zlib",
+      "tiff_tile_size": 512,
+      "write_ome_tiff": true,
+      "ome_tile_size": 512,
+      "ome_pyramid_min_size": 512,
+      "write_previews": true,
+      "preview_max_size": 1536,
+      "keep_memmap": false
+    },
+    "schedule": {
+      "use_bounds": true,
+      "use_tissue_mask": true,
+      "tissue_mask_max_size": 1536,
+      "tissue_mask_min_fraction": 0.03,
+      "tissue_mask_saturation_threshold": 18,
+      "tissue_mask_white_threshold": 235,
+      "supertile_px": 4096
+    },
+    "future": {}
+  },
+  "coordinate_mapping": {
+    "level0_x_from_mask_x": "x_l0 = output_origin_x_level0 + x_mask * actual_output_mpp_x / base_mpp_x",
+    "level0_y_from_mask_y": "y_l0 = output_origin_y_level0 + y_mask * actual_output_mpp_y / base_mpp_y"
+  }
+}

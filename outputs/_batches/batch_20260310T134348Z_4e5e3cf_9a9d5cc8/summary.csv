@@ -1,0 +1,4 @@
+slide_stem,run_id,device,grid_patches,roi_patches,candidate_patches,supertiles,seconds,candidate_patches_per_second,run_dir,run_json
+MJUL22785295_001,20260310T133951Z_4e5e3cf_9a9d5cc8,xpu,9216,9216,982,28,53.685645,18.291668,/home/naveen/wsi-seg/outputs/MJUL22785295_001/20260310T133951Z_4e5e3cf_9a9d5cc8,/home/naveen/wsi-seg/outputs/MJUL22785295_001/20260310T133951Z_4e5e3cf_9a9d5cc8/run.json
+MKQD63856403_001,20260310T134049Z_4e5e3cf_9a9d5cc8,xpu,9112,9112,2889,49,137.293853,21.042457,/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8,/home/naveen/wsi-seg/outputs/MKQD63856403_001/20260310T134049Z_4e5e3cf_9a9d5cc8/run.json
+QOFN21275156_001,20260310T134312Z_4e5e3cf_9a9d5cc8,xpu,3696,3696,622,15,33.710103,18.451442,/home/naveen/wsi-seg/outputs/QOFN21275156_001/20260310T134312Z_4e5e3cf_9a9d5cc8,/home/naveen/wsi-seg/outputs/QOFN21275156_001/20260310T134312Z_4e5e3cf_9a9d5cc8/run.json
