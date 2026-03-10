@@ -15,6 +15,23 @@ class PathsConfig(BaseModel):
     output_dir: Path = Path("outputs")
 
 
+class SlideConfig(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    mpp_override_x: float | None = None
+    mpp_override_y: float | None = None
+
+    @model_validator(mode="after")
+    def validate_slide(self) -> SlideConfig:
+        for name, value in (
+            ("slide.mpp_override_x", self.mpp_override_x),
+            ("slide.mpp_override_y", self.mpp_override_y),
+        ):
+            if value is not None and value <= 0:
+                raise ValueError(f"{name} must be > 0 when provided")
+        return self
+
+
 class ModelConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
@@ -134,6 +151,7 @@ class AppConfig(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     paths: PathsConfig = Field(default_factory=PathsConfig)
+    slide: SlideConfig = Field(default_factory=SlideConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
     runtime: RuntimeConfig = Field(default_factory=RuntimeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)

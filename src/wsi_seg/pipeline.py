@@ -191,7 +191,11 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
     wall_start = time.perf_counter()
 
     t0 = time.perf_counter()
-    slide = OpenSlideReader(cfg.paths.slide_path)
+    slide = OpenSlideReader(
+        cfg.paths.slide_path,
+        mpp_override_x=cfg.slide.mpp_override_x,
+        mpp_override_y=cfg.slide.mpp_override_y,
+    )
     cache_enabled = slide.set_cache(cfg.runtime.openslide_cache_bytes)
     selection = slide.choose_level(
         cfg.model.target_mpp,
@@ -203,6 +207,8 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
         "slide_opened",
         slide_path=cfg.paths.slide_path,
         vendor=slide.metadata.vendor,
+        backend=slide.metadata.backend,
+        detected_format=slide.metadata.detected_format,
         cache_enabled=cache_enabled,
         mpp_source=slide.metadata.mpp_source,
         chosen_level=selection.level,
@@ -262,6 +268,8 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
                 plans=supertiles,
                 openslide_cache_bytes=cfg.runtime.openslide_cache_bytes,
                 queue_size=cfg.runtime.prefetch_queue_size,
+                mpp_override_x=cfg.slide.mpp_override_x,
+                mpp_override_y=cfg.slide.mpp_override_y,
             ) as prefetcher:
                 _process_prefetched_supertiles(
                     mask,

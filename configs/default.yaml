@@ -1,3 +1,7 @@
+slide:
+  mpp_override_x: null
+  mpp_override_y: null
+
 model:
   target_mpp: 0.88
   patch_px: 512

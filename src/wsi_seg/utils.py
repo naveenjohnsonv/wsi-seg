@@ -125,6 +125,7 @@ def git_info() -> dict[str, Any]:
 
 def config_hash(cfg_dict: dict[str, Any]) -> str:
     relevant = {
+        "slide": cfg_dict.get("slide", {}),
         "model": cfg_dict.get("model", {}),
         "runtime": {
             "prefetch_supertiles": cfg_dict.get("runtime", {}).get("prefetch_supertiles", True),

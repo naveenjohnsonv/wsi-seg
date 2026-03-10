@@ -85,7 +85,11 @@ def inspect_slide(
 
     for sp in slides:
         slide_cfg = _cfg_with_slide(cfg, sp)
-        with OpenSlideReader(slide_cfg.paths.slide_path) as slide:
+        with OpenSlideReader(
+            slide_cfg.paths.slide_path,
+            mpp_override_x=slide_cfg.slide.mpp_override_x,
+            mpp_override_y=slide_cfg.slide.mpp_override_y,
+        ) as slide:
             selection = slide.choose_level(
                 slide_cfg.model.target_mpp,
                 policy=slide_cfg.model.level_selection_policy,
@@ -99,6 +103,8 @@ def inspect_slide(
             table.add_column("Value")
             table.add_row("Path", str(md.path))
             table.add_row("Vendor", str(md.vendor))
+            table.add_row("Backend", md.backend)
+            table.add_row("Detected format", str(md.detected_format))
             table.add_row("Level-0 size", f"{md.width} x {md.height}")
             table.add_row("MPP x / y", f"{md.mpp_x:.6f} / {md.mpp_y:.6f}")
             table.add_row("MPP source", md.mpp_source)

@@ -43,6 +43,8 @@ class SuperTilePrefetcher:
         plans: Sequence[SuperTilePlan],
         openslide_cache_bytes: int,
         queue_size: int = 2,
+        mpp_override_x: float | None = None,
+        mpp_override_y: float | None = None,
     ) -> None:
         self.slide_path = Path(slide_path)
         self.selection = selection
@@ -50,6 +52,8 @@ class SuperTilePrefetcher:
         self.plans = list(plans)
         self.openslide_cache_bytes = openslide_cache_bytes
         self.queue_size = queue_size
+        self.mpp_override_x = mpp_override_x
+        self.mpp_override_y = mpp_override_y
         self.metrics = ReaderMetrics()
         self._queue: queue.Queue[_QueueItem] = queue.Queue(maxsize=max(1, queue_size))
         self._thread: threading.Thread | None = None
@@ -82,7 +86,11 @@ class SuperTilePrefetcher:
 
     def _worker(self) -> None:
         try:
-            with OpenSlideReader(self.slide_path) as slide:
+            with OpenSlideReader(
+                self.slide_path,
+                mpp_override_x=self.mpp_override_x,
+                mpp_override_y=self.mpp_override_y,
+            ) as slide:
                 slide.set_cache(self.openslide_cache_bytes)
                 for plan in self.plans:
                     t0 = time.perf_counter()

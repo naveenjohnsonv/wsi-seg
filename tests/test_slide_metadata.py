@@ -39,3 +39,9 @@ def test_extract_mpp_from_objective_power_estimate() -> None:
     mpp_x, mpp_y, source = OpenSlideReader._extract_mpp_from_properties(props)
     assert (mpp_x, mpp_y) == (0.5, 0.5)
     assert source == "objective-power-estimate"
+
+
+def test_mpp_override_fills_missing_axis() -> None:
+    mpp_x, mpp_y, source = OpenSlideReader._override_mpp(0.75, None)
+    assert (mpp_x, mpp_y) == (0.75, 0.75)
+    assert source == "config.override"

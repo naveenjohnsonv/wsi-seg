@@ -31,6 +31,8 @@ class SlideBounds:
 class SlideMetadata:
     path: Path
     vendor: str | None
+    backend: str
+    detected_format: str | None
     width: int
     height: int
     mpp_x: float
@@ -63,10 +65,18 @@ class OpenSlideReader:
         r"\b(?:pixel\s+size|pixelsize)\s*[:=]\s*([0-9]+(?:\.[0-9]+)?)\s*(?:um|µm)",
     )
 
-    def __init__(self, path: str | Path) -> None:
+    def __init__(
+        self,
+        path: str | Path,
+        *,
+        mpp_override_x: float | None = None,
+        mpp_override_y: float | None = None,
+    ) -> None:
         self.path = Path(path)
         self._openslide = self._import_openslide()
-        self._slide = self._openslide.OpenSlide(str(self.path))
+        self._mpp_override_x = mpp_override_x
+        self._mpp_override_y = mpp_override_y
+        self._slide = self._openslide.open_slide(str(self.path))
         self.metadata = self._read_metadata()
 
     @staticmethod
@@ -187,21 +197,60 @@ class OpenSlideReader:
 
         raise ValueError("Could not determine level-0 MPP from slide metadata.")
 
-    def _read_metadata(self) -> SlideMetadata:
-        osr = self._slide
-        osl = self._openslide
-        props = dict(osr.properties)
 
-        mpp_x, mpp_y, mpp_source = self._extract_mpp_from_properties(
+    @classmethod
+    def _override_mpp(
+        cls,
+        override_x: float | None,
+        override_y: float | None,
+    ) -> tuple[float, float, str] | None:
+        if override_x is None and override_y is None:
+            return None
+        if override_x is None:
+            override_x = override_y
+        if override_y is None:
+            override_y = override_x
+        if override_x is None or override_y is None or override_x <= 0 or override_y <= 0:
+            raise ValueError("MPP overrides must be > 0 when provided")
+        return float(override_x), float(override_y), "config.override"
+
+    def _resolve_mpp(self, props: dict[str, Any], osl: Any) -> tuple[float, float, str]:
+        override = self._override_mpp(self._mpp_override_x, self._mpp_override_y)
+        if override is not None:
+            return override
+        return self._extract_mpp_from_properties(
             props,
             property_name_mpp_x=osl.PROPERTY_NAME_MPP_X,
             property_name_mpp_y=osl.PROPERTY_NAME_MPP_Y,
             property_name_objective_power=osl.PROPERTY_NAME_OBJECTIVE_POWER,
         )
 
+    def _detect_format(self) -> str | None:
+        detect_format = getattr(self._openslide, "detect_format", None)
+        if callable(detect_format):
+            try:
+                detected = detect_format(str(self.path))
+            except Exception:  # pragma: no cover
+                return None
+            return str(detected) if detected is not None else None
+        return None
+
+    def _read_metadata(self) -> SlideMetadata:
+        osr = self._slide
+        osl = self._openslide
+        props = dict(getattr(osr, "properties", {}))
+        backend = type(osr).__name__
+        detected_format = self._detect_format()
+
+        mpp_x, mpp_y, mpp_source = self._resolve_mpp(props, osl)
+
         objective_power = self._float_or_none(props.get(osl.PROPERTY_NAME_OBJECTIVE_POWER))
         background_hex = props.get(osl.PROPERTY_NAME_BACKGROUND_COLOR)
         vendor = props.get(osl.PROPERTY_NAME_VENDOR)
+        if vendor is None and detected_format is not None:
+            vendor = detected_format
+        if vendor is None and backend == "ImageSlide":
+            vendor = "generic-image"
 
         bounds = None
         bx = self._float_or_none(props.get(osl.PROPERTY_NAME_BOUNDS_X))
@@ -212,7 +261,9 @@ class OpenSlideReader:
             bounds = SlideBounds(int(bx), int(by), int(bw), int(bh))
 
         levels: list[SlideLevel] = []
-        dims_ds = zip(osr.level_dimensions, osr.level_downsamples, strict=True)
+        level_dimensions = getattr(osr, "level_dimensions", [osr.dimensions])
+        level_downsamples = getattr(osr, "level_downsamples", [1.0])
+        dims_ds = zip(level_dimensions, level_downsamples, strict=True)
         for idx, ((w, h), ds) in enumerate(dims_ds):
             levels.append(
                 SlideLevel(
@@ -229,6 +280,8 @@ class OpenSlideReader:
         return SlideMetadata(
             path=self.path,
             vendor=vendor,
+            backend=backend,
+            detected_format=detected_format,
             width=int(w0),
             height=int(h0),
             mpp_x=float(mpp_x),
@@ -242,6 +295,8 @@ class OpenSlideReader:
 
     def set_cache(self, capacity_bytes: int) -> bool:
         if capacity_bytes <= 0:
+            return False
+        if not hasattr(self._openslide, "OpenSlideCache") or not hasattr(self._slide, "set_cache"):
             return False
         try:
             cache = self._openslide.OpenSlideCache(capacity_bytes)
