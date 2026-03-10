@@ -75,6 +75,13 @@ class RunArtifacts:
     run_json: Path
 
 
+def exports_requested(cfg: AppConfig) -> bool:
+    return any((cfg.output.write_tiff, cfg.output.write_ome_tiff, cfg.output.write_previews))
+
+
+def needs_materialized_export_mask(cfg: AppConfig) -> bool:
+    return any((cfg.output.write_tiff, cfg.output.write_ome_tiff))
+
 @dataclass(slots=True)
 class RunSummary:
     run_id: str
@@ -287,55 +294,59 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
 
         mask.flush()
 
-        t0 = time.perf_counter()
-        actual_output_mpp_x = (slide.metadata.width * slide.metadata.mpp_x) / max(out_w, 1)
-        actual_output_mpp_y = (slide.metadata.height * slide.metadata.mpp_y) / max(out_h, 1)
-        mask *= np.uint8(255)
-        mask.flush()
-        if cfg.output.write_tiff:
-            mask_tiff_path = export_mask_tiff(
-                mask,
-                run_dir / "mask.tif",
-                mpp_x=actual_output_mpp_x,
-                mpp_y=actual_output_mpp_y,
-                bigtiff=cfg.output.bigtiff,
-                compression=cfg.output.compression,
-                tile_size=cfg.output.tiff_tile_size,
-                description={
-                    "run_id": run_id,
-                    "slide": str(cfg.paths.slide_path),
-                    "target_mpp": cfg.model.target_mpp,
-                    "actual_output_mpp_x": actual_output_mpp_x,
-                    "actual_output_mpp_y": actual_output_mpp_y,
-                    "roi": asdict(planning.roi),
-                },
+        if exports_requested(cfg):
+            t0 = time.perf_counter()
+            actual_output_mpp_x = (slide.metadata.width * slide.metadata.mpp_x) / max(out_w, 1)
+            actual_output_mpp_y = (slide.metadata.height * slide.metadata.mpp_y) / max(out_h, 1)
+            if needs_materialized_export_mask(cfg):
+                mask *= np.uint8(255)
+                mask.flush()
+            if cfg.output.write_tiff:
+                mask_tiff_path = export_mask_tiff(
+                    mask,
+                    run_dir / "mask.tif",
+                    mpp_x=actual_output_mpp_x,
+                    mpp_y=actual_output_mpp_y,
+                    bigtiff=cfg.output.bigtiff,
+                    compression=cfg.output.compression,
+                    tile_size=cfg.output.tiff_tile_size,
+                    description={
+                        "run_id": run_id,
+                        "slide": str(cfg.paths.slide_path),
+                        "target_mpp": cfg.model.target_mpp,
+                        "actual_output_mpp_x": actual_output_mpp_x,
+                        "actual_output_mpp_y": actual_output_mpp_y,
+                        "roi": asdict(planning.roi),
+                    },
+                )
+            if cfg.output.write_ome_tiff:
+                mask_ome_tiff_path = export_mask_ome_tiff(
+                    mask,
+                    run_dir / "mask.ome.tif",
+                    mpp_x=actual_output_mpp_x,
+                    mpp_y=actual_output_mpp_y,
+                    bigtiff=cfg.output.bigtiff,
+                    compression=cfg.output.compression,
+                    tile_size=cfg.output.ome_tile_size,
+                    pyramid_min_size=cfg.output.ome_pyramid_min_size,
+                )
+            if cfg.output.write_previews:
+                previews = save_previews(
+                    slide,
+                    mask,
+                    run_dir,
+                    max_size=cfg.output.preview_max_size,
+                    tissue_mask=coarse_mask,
+                )
+            wall.export_outputs = time.perf_counter() - t0
+            run_logger.event(
+                "exports_complete",
+                mask_tiff=mask_tiff_path,
+                mask_ome_tiff=mask_ome_tiff_path,
+                previews=previews,
             )
-        if cfg.output.write_ome_tiff:
-            mask_ome_tiff_path = export_mask_ome_tiff(
-                mask,
-                run_dir / "mask.ome.tif",
-                mpp_x=actual_output_mpp_x,
-                mpp_y=actual_output_mpp_y,
-                bigtiff=cfg.output.bigtiff,
-                compression=cfg.output.compression,
-                tile_size=cfg.output.ome_tile_size,
-                pyramid_min_size=cfg.output.ome_pyramid_min_size,
-            )
-        if cfg.output.write_previews:
-            previews = save_previews(
-                slide,
-                mask,
-                run_dir,
-                max_size=cfg.output.preview_max_size,
-                tissue_mask=coarse_mask,
-            )
-        wall.export_outputs = time.perf_counter() - t0
-        run_logger.event(
-            "exports_complete",
-            mask_tiff=mask_tiff_path,
-            mask_ome_tiff=mask_ome_tiff_path,
-            previews=previews,
-        )
+        else:
+            run_logger.event("exports_skipped", reason="all export outputs disabled")
 
         wall.total = time.perf_counter() - wall_start
         finished_at = utc_now_iso()
