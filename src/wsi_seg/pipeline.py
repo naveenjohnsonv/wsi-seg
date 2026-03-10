@@ -193,7 +193,11 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
     t0 = time.perf_counter()
     slide = OpenSlideReader(cfg.paths.slide_path)
     cache_enabled = slide.set_cache(cfg.runtime.openslide_cache_bytes)
-    selection = slide.choose_level(cfg.model.target_mpp)
+    selection = slide.choose_level(
+        cfg.model.target_mpp,
+        policy=cfg.model.level_selection_policy,
+        max_native_oversample_factor=cfg.model.max_native_oversample_factor,
+    )
     wall.open_slide = time.perf_counter() - t0
     run_logger.event(
         "slide_opened",
@@ -202,8 +206,11 @@ def run_baseline(cfg: AppConfig, *, verbose: bool = False) -> RunSummary:
         cache_enabled=cache_enabled,
         mpp_source=slide.metadata.mpp_source,
         chosen_level=selection.level,
+        chosen_level_policy=selection.policy,
         chosen_level_mpp_x=selection.level_mpp_x,
         chosen_level_mpp_y=selection.level_mpp_y,
+        resize_factor_x=selection.resize_factor_x,
+        resize_factor_y=selection.resize_factor_y,
     )
 
     mask_tiff_path: Path | None = None

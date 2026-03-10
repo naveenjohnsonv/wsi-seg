@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -25,6 +25,8 @@ class ModelConfig(BaseModel):
     batch_size: int = 8
     threshold: float = 0.5
     apply_sigmoid: bool = True
+    level_selection_policy: Literal["nearest", "prefer_higher", "prefer_higher_bounded"] = "nearest"
+    max_native_oversample_factor: float = 2.0
 
     @model_validator(mode="after")
     def validate_geometry(self) -> ModelConfig:
@@ -40,6 +42,10 @@ class ModelConfig(BaseModel):
             raise ValueError("model.batch_size must be > 0")
         if not 0.0 <= self.threshold <= 1.0:
             raise ValueError("model.threshold must be in [0, 1]")
+        if self.max_native_oversample_factor < 1.0:
+            raise ValueError("model.max_native_oversample_factor must be >= 1.0")
+        if self.level_selection_policy not in {"nearest", "prefer_higher", "prefer_higher_bounded"}:
+            raise ValueError("model.level_selection_policy is invalid")
         valid_extent = self.patch_px - (2 * self.halo_px)
         if valid_extent <= 0:
             raise ValueError("model.patch_px must be greater than 2 * model.halo_px")

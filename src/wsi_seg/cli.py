@@ -86,7 +86,11 @@ def inspect_slide(
     for sp in slides:
         slide_cfg = _cfg_with_slide(cfg, sp)
         with OpenSlideReader(slide_cfg.paths.slide_path) as slide:
-            selection = slide.choose_level(slide_cfg.model.target_mpp)
+            selection = slide.choose_level(
+                slide_cfg.model.target_mpp,
+                policy=slide_cfg.model.level_selection_policy,
+                max_native_oversample_factor=slide_cfg.model.max_native_oversample_factor,
+            )
             out_w, out_h, planning, _, coarse_mask = plan_run(slide_cfg, slide)
             md = slide.metadata
 
@@ -99,12 +103,17 @@ def inspect_slide(
             table.add_row("MPP x / y", f"{md.mpp_x:.6f} / {md.mpp_y:.6f}")
             table.add_row("MPP source", md.mpp_source)
             table.add_row("Objective power", str(md.objective_power))
+            table.add_row("Level policy", selection.policy)
             table.add_row("Chosen level", str(selection.level))
             table.add_row(
                 "Chosen level MPP x / y",
                 f"{selection.level_mpp_x:.6f} / {selection.level_mpp_y:.6f}",
             )
             table.add_row("Target MPP", f"{slide_cfg.model.target_mpp:.6f}")
+            table.add_row(
+                "Resize factor x / y",
+                f"{selection.resize_factor_x:.4f} / {selection.resize_factor_y:.4f}",
+            )
             table.add_row("Output mask size", f"{out_w} x {out_h}")
             table.add_row("Estimated mask bytes", format_bytes(out_w * out_h))
             table.add_row(

@@ -6,6 +6,8 @@ model:
   batch_size: 8
   threshold: 0.5
   apply_sigmoid: true
+  level_selection_policy: nearest  # nearest | prefer_higher | prefer_higher_bounded
+  max_native_oversample_factor: 2.0
 
 runtime:
   device: auto  # auto | cuda | cuda:N | xpu | xpu:N | mps | cpu

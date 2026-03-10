@@ -50,6 +50,9 @@ class LevelSelection:
     level_mpp_y: float
     error_x: float
     error_y: float
+    policy: str
+    resize_factor_x: float
+    resize_factor_y: float
 
 
 class OpenSlideReader:
@@ -247,7 +250,7 @@ class OpenSlideReader:
         except Exception:
             return False
 
-    def choose_level(self, target_mpp: float) -> LevelSelection:
+    def _nearest_level(self, target_mpp: float) -> SlideLevel:
         best: SlideLevel | None = None
         best_score: float | None = None
         for level in self.metadata.levels:
@@ -256,6 +259,50 @@ class OpenSlideReader:
                 best = level
                 best_score = score
         assert best is not None
+        return best
+
+    @staticmethod
+    def _native_oversample_factor(level: SlideLevel, target_mpp: float) -> float:
+        return max(target_mpp / level.mpp_x, target_mpp / level.mpp_y)
+
+    def _prefer_higher_level(
+        self,
+        target_mpp: float,
+        *,
+        max_native_oversample_factor: float | None = None,
+    ) -> SlideLevel | None:
+        candidates = [
+            level
+            for level in self.metadata.levels
+            if level.mpp_x <= target_mpp and level.mpp_y <= target_mpp
+        ]
+        candidates.sort(key=lambda level: (level.mpp_x + level.mpp_y) / 2.0, reverse=True)
+        for level in candidates:
+            if max_native_oversample_factor is None:
+                return level
+            if self._native_oversample_factor(level, target_mpp) <= max_native_oversample_factor:
+                return level
+        return None
+
+    def choose_level(
+        self,
+        target_mpp: float,
+        *,
+        policy: str = "nearest",
+        max_native_oversample_factor: float = 2.0,
+    ) -> LevelSelection:
+        if policy == "nearest":
+            best = self._nearest_level(target_mpp)
+        elif policy == "prefer_higher":
+            best = self._prefer_higher_level(target_mpp) or self._nearest_level(target_mpp)
+        elif policy == "prefer_higher_bounded":
+            best = self._prefer_higher_level(
+                target_mpp,
+                max_native_oversample_factor=max_native_oversample_factor,
+            ) or self._nearest_level(target_mpp)
+        else:  # pragma: no cover
+            raise ValueError(f"Unsupported level-selection policy: {policy}")
+
         return LevelSelection(
             level=best.index,
             downsample=best.downsample,
@@ -263,6 +310,9 @@ class OpenSlideReader:
             level_mpp_y=best.mpp_y,
             error_x=abs(best.mpp_x - target_mpp),
             error_y=abs(best.mpp_y - target_mpp),
+            policy=policy,
+            resize_factor_x=target_mpp / best.mpp_x,
+            resize_factor_y=target_mpp / best.mpp_y,
         )
 
     def output_shape(self, target_mpp: float) -> tuple[int, int]:

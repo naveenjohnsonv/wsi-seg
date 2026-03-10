@@ -1,7 +1,6 @@
 from wsi_seg.config import AppConfig
 from wsi_seg.pipeline import exports_requested, needs_materialized_export_mask
 
-
 BASE = {
     "model": {
         "target_mpp": 0.88,
