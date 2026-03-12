@@ -57,7 +57,7 @@ docker run --rm \
 ### NVIDIA CUDA
 
 Before building, edit the `RUN uv sync` line in the Dockerfile to use
-`--extra cu124` instead of `--extra cpu`.
+`--extra cu128` instead of `--extra cpu`.
 
 ```bash
 docker build -t wsi-seg-cuda .
